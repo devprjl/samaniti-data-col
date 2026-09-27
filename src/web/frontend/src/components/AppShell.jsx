@@ -9,6 +9,7 @@ const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
+    { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 
@@ -25,6 +26,19 @@ function getBreadcrumbs(route, municipalityName) {
             return [{ label: "Collection activity" }];
         case "run":
             return [{ label: "Collection activity", to: "/activity" }, { label: "Run detail" }];
+        case "workspace":
+            return [
+                { label: "Scraper workspace" },
+                ...(route.province
+                    ? [
+                          {
+                              label: route.route
+                                  ? `${route.province}:${route.municipality}:${route.route}`
+                                  : `${route.province}:${route.municipality}`,
+                          },
+                      ]
+                    : []),
+            ];
         case "methodology":
             return [{ label: "Data guide" }];
         default:

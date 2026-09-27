@@ -1,14 +1,16 @@
 import "dotenv/config";
+import { fileURLToPath } from "node:url";
 import {
     IMunicipalityScraper,
     ScrapedPage,
     ScraperConfig,
 } from "../../../core/contracts/scraper.interface.js";
 import { EtlPayload } from "../../../core/types/domain.js";
+import { runScraperPipeline, ScraperRunSummary } from "../../../core/scraper/pipeline.js";
 import { extract, ROUTES } from "./extract.js";
 import { transform, MUNICIPALITY_CODE } from "./transform.js";
 import { load } from "./load.js";
-import { prisma, recordScraperRun } from "../../../core/db/loader.js";
+import { prisma } from "../../../core/db/loader.js";
 
 export class BardaghatScraper implements IMunicipalityScraper {
     public municipalityCode = MUNICIPALITY_CODE;
@@ -26,61 +28,32 @@ export class BardaghatScraper implements IMunicipalityScraper {
         return load(data);
     }
 
-    async run(config?: ScraperConfig): Promise<void> {
-        console.log(`[BardaghatScraper] Starting ETL run for '${this.municipalityCode}'`);
-        const startTime = Date.now();
-        let itemsAdded = 0;
-        let itemsUpdated = 0;
-        let status = "success";
-        let errorMsg: string | undefined = undefined;
-
-        try {
-            const pages = await this.extract(config);
-            console.log(
-                `[BardaghatScraper] Extracted ${pages.length} page(s). Processing incrementally...`,
-            );
-
-            for (const page of pages) {
-                try {
-                    const partialData = await this.transform([page]);
-                    const res = await this.load(partialData);
-                    if (res) {
-                        itemsAdded += res.itemsAdded;
-                        itemsUpdated += res.itemsUpdated;
-                    }
-                } catch (err: any) {
-                    console.error(`[BardaghatScraper] Error processing page ${page.url}:`, err);
-                }
-            }
-            console.log(`[BardaghatScraper] ETL run completed successfully.`);
-        } catch (err: any) {
-            status = "failed";
-            errorMsg = err?.message ?? String(err);
-            console.error(`[BardaghatScraper] ETL run failed:`, err);
-            throw err;
-        } finally {
-            const durationMs = Date.now() - startTime;
-            await recordScraperRun(this.municipalityCode, {
-                scraperName: this.municipalityCode,
-                durationMs,
-                status,
-                itemsAdded,
-                itemsUpdated,
-                error: errorMsg,
-            });
-        }
+    async run(config?: ScraperConfig): Promise<ScraperRunSummary> {
+        return runScraperPipeline(
+            {
+                label: "BardaghatScraper",
+                municipalityCode: this.municipalityCode,
+                routes: this.routes,
+                extract: (scraperConfig) => this.extract(scraperConfig),
+                transform: (pages) => this.transform(pages),
+                load: (data) => this.load(data),
+            },
+            config,
+        );
     }
 }
 
-// Run directly: npm run scraper lumbini:bardaghat
-(async () => {
-    const scraper = new BardaghatScraper();
-    try {
-        await scraper.run();
-    } catch (err) {
-        console.error("[BardaghatScraper] Fatal error:", err);
-        process.exit(1);
-    } finally {
-        await prisma.$disconnect();
-    }
-})();
+// Run directly: npx tsx src/scrapers/lumbini/bardaghat-mun/index.ts
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    (async () => {
+        const scraper = new BardaghatScraper();
+        try {
+            await scraper.run();
+        } catch (err) {
+            console.error("[BardaghatScraper] Fatal error:", err);
+            process.exit(1);
+        } finally {
+            await prisma.$disconnect();
+        }
+    })();
+}

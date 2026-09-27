@@ -6,6 +6,8 @@ import {
     scopeHtml,
     extractLinksFromHtml,
 } from "../utils/index.js";
+import { getRouteName, selectRoutes } from "./route-selection.js";
+import { resolvePaginationSetting } from "./settings.js";
 
 /**
  * Generic sequential crawler built on Crawlee's CheerioCrawler.
@@ -15,18 +17,38 @@ import {
  *   2. If `detailSelector` is set, the listing HTML is first scoped by
  *      `contentSelector` (if defined), then `detailSelector` extracts detail
  *      links from within that scope. The detail pages are then scoped + pushed.
- *   3. If `paginated` is true, discovers all subsequent page URLs and processes
- *      each one through the same scoping/detail logic.
+ *   3. When pagination is enabled (SCRAPER_PAGINATION env var or
+ *      `ScraperConfig.pagination`), all subsequent page URLs are discovered and
+ *      processed through the same scoping/detail logic. When it is disabled the
+ *      crawl stops at page 1, which still yields the full content for portals
+ *      that are not paginated.
  *   4. If `detailSelector` is NOT set, the listing page itself is the content page
  *      and gets pushed directly to the results (scoped by `contentSelector`).
  */
 export async function crawlRoutes(
     routes: RouteConfig[],
-    _config?: ScraperConfig,
+    config?: ScraperConfig,
 ): Promise<ScrapedPage[]> {
     const pages: ScrapedPage[] = [];
+    const selectedRoutes = selectRoutes(routes, config?.routeNames);
+    const pagination = resolvePaginationSetting(config);
 
-    for (const route of routes) {
+    if (selectedRoutes.length !== routes.length) {
+        console.log(
+            `[Crawler] Running ${selectedRoutes.length} of ${routes.length} route(s): ${selectedRoutes
+                .map((route) => getRouteName(route))
+                .join(", ")}`,
+        );
+    }
+
+    if (selectedRoutes.length === 0) {
+        console.warn("[Crawler] No routes matched the requested selection.");
+        return pages;
+    }
+
+    console.log(`[Crawler] Pagination: ${pagination.label} (${pagination.source}).`);
+
+    for (const route of selectedRoutes) {
         const base = route.baseUrl ?? "https://sainamainamun.gov.np";
 
         // Per-route queue so pages do not bleed between routes
@@ -79,7 +101,7 @@ export async function crawlRoutes(
                 // ── LISTING PAGE ──────────────────────────────────────────────────────
                 if (isListingPage) {
                     // 1. Discover and enqueue paginated pages (only from Page 1)
-                    if (r.paginated && pageNum === 1) {
+                    if (pagination.enabled && pageNum === 1) {
                         const currentListingUrl = request.loadedUrl ?? request.url;
                         const paginatedUrls = extractPaginationUrls(
                             fullHtml,

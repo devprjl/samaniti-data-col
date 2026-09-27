@@ -35,4 +35,22 @@ export function getDocumentDownloadUrl(documentId) {
     return `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/download`;
 }
 
+/** Route configurations, scraper targets and execution settings for the scraper workspace. */
+export function getScraperWorkspace() {
+    return apiRequest("/api/workspace/routes");
+}
+
+/** Starts a scraper run for a `<province>:<municipality>[:<route>]` key. */
+export function startScraperRun(key, pagination) {
+    return apiRequest("/api/workspace/runs", {
+        method: "POST",
+        body: JSON.stringify({ key, pagination }),
+    });
+}
+
+/** Progress and logs of a run started from the UI. */
+export function getScraperRun(runId) {
+    return apiRequest(`/api/workspace/runs/${encodeURIComponent(runId)}`);
+}
+
 export { API_BASE_URL };
