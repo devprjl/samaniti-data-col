@@ -7,18 +7,17 @@ datasource db {
 }
 
 model Municipality {
-  id        String               @id @default(uuid())
-  code      String               @unique
-  nameNe    String               @map("name_ne")
-  nameEn    String               @map("name_en")
-  province  String
-  district  String
-  createdAt DateTime             @default(now()) @map("created_at")
-  updatedAt DateTime             @updatedAt @map("updated_at")
-  profile   MunicipalityProfile?
-  notices   Notice[]
-  projects  Project[]
-  reports   Report[]
+  id             String               @id @default(uuid())
+  code           String               @unique
+  nameNe         String               @map("name_ne")
+  nameEn         String               @map("name_en")
+  province       String
+  district       String
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  profile        MunicipalityProfile?
+  policyEntities PolicyEntity[]
+  scraperRuns    ScraperRun[]
 
   @@map("municipalities")
 }
@@ -44,51 +43,19 @@ model MunicipalityProfile {
   @@map("municipality_profiles")
 }
 
-model Project {
+model PolicyEntity {
   id             String       @id @default(uuid())
   municipalityId String       @map("municipality_id")
-  titleNe        String       @map("title_ne")
-  titleEn        String?      @map("title_en")
-  budgetAmount   Decimal?     @map("budget_amount")
-  fiscalYear     String?      @map("fiscal_year")
-  status         String?
-  wardNo         Int?         @map("ward_no")
-  type           String?
-  sourceUrl      String       @unique @map("source_url")
-  metadata       Json?        @map("metadata")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  documents      Document[]
-  municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
-
-  @@map("projects")
-}
-
-model Report {
-  id             String       @id @default(uuid())
-  municipalityId String       @map("municipality_id")
-  titleNe        String       @map("title_ne")
-  titleEn        String?      @map("title_en")
-  type           String?
-  fiscalYear     String?      @map("fiscal_year")
-  publishedDate  String?      @map("published_date")
-  sourceUrl      String       @unique @map("source_url")
-  metadata       Json?        @map("metadata")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  documents      Document[]
-  municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
-
-  @@map("reports")
-}
-
-model Notice {
-  id             String       @id @default(uuid())
-  municipalityId String       @map("municipality_id")
+  category       String       // 'notice', 'project', 'report', etc.
   titleNe        String       @map("title_ne")
   titleEn        String?      @map("title_en")
   contentNe      String?      @map("content_ne")
+  contentEn      String?      @map("content_en")
   type           String?
+  fiscalYear     String?      @map("fiscal_year")
+  budgetAmount   Decimal?     @map("budget_amount")
+  status         String?
+  wardNo         Int?         @map("ward_no")
   publishedDate  String?      @map("published_date")
   sourceUrl      String       @unique @map("source_url")
   metadata       Json?        @map("metadata")
@@ -97,25 +64,38 @@ model Notice {
   documents      Document[]
   municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
 
-  @@map("notices")
+  @@map("policy_entities")
+}
+
+model ScraperRun {
+  id             String       @id @default(uuid())
+  municipalityId String?      @map("municipality_id")
+  scraperName    String       @map("scraper_name")
+  status         String       // 'success', 'failed'
+  itemsAdded     Int          @default(0) @map("items_added")
+  itemsUpdated   Int          @default(0) @map("items_updated")
+  durationMs     Int          @map("duration_ms")
+  error          String?
+  startedAt      DateTime     @default(now()) @map("started_at")
+  endedAt        DateTime?    @map("ended_at")
+  municipality   Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
+
+  @@map("scraper_runs")
 }
 
 model Document {
-  id             String   @id @default(uuid())
-  fileName       String   @map("file_name")
-  fileType       String?  @map("file_type")
-  originalUrl    String   @unique @map("original_url")
-  storagePath    String?  @map("storage_path")
-  projectId      String?  @map("project_id")
-  reportId       String?  @map("report_id")
-  noticeId       String?  @map("notice_id")
-  createdAt      DateTime @default(now()) @map("created_at")
-  downloadError  String?  @map("download_error")
-  downloadStatus String   @default("pending") @map("download_status")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  notice         Notice?  @relation(fields: [noticeId], references: [id], onDelete: Cascade)
-  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  report         Report?  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid())
+  fileName       String        @map("file_name")
+  fileType       String?       @map("file_type")
+  originalUrl    String        @unique @map("original_url")
+  storagePath    String?       @map("storage_path")
+  policyEntityId String?       @map("policy_entity_id")
+  ocrData        String?       @map("ocr_data")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  downloadError  String?       @map("download_error")
+  downloadStatus String        @default("pending") @map("download_status")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  policyEntity   PolicyEntity? @relation(fields: [policyEntityId], references: [id], onDelete: Cascade)
 
   @@map("documents")
 }

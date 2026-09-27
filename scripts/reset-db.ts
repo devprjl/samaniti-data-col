@@ -14,18 +14,10 @@ async function main() {
         const documentsDeleted = await prisma.document.deleteMany({});
         console.log(`✅ Deleted ${documentsDeleted.count} documents\n`);
 
-        // Delete projects, reports, notices (cascade deletes documents via FK)
-        console.log("Deleting projects...");
-        const projectsDeleted = await prisma.project.deleteMany({});
-        console.log(`✅ Deleted ${projectsDeleted.count} projects\n`);
-
-        console.log("Deleting reports...");
-        const reportsDeleted = await prisma.report.deleteMany({});
-        console.log(`✅ Deleted ${reportsDeleted.count} reports\n`);
-
-        console.log("Deleting notices...");
-        const noticesDeleted = await prisma.notice.deleteMany({});
-        console.log(`✅ Deleted ${noticesDeleted.count} notices\n`);
+        // Delete all the policy entities
+        console.log("Deleting Policy Entities...");
+        const policyEntityDeleted = await prisma.policyEntity.deleteMany({});
+        console.log(`✅ Deleted ${policyEntityDeleted.count} policy entities\n`);
 
         // Delete profiles
         console.log("Deleting municipality profiles...");
@@ -40,9 +32,7 @@ async function main() {
         console.log("Database reset complete!");
         console.log("\nSummary:");
         console.log(`Documents: ${documentsDeleted.count}`);
-        console.log(`Projects:  ${projectsDeleted.count}`);
-        console.log(`Reports:   ${reportsDeleted.count}`);
-        console.log(`Notices:   ${noticesDeleted.count}`);
+        console.log(`Policy Entities:   ${policyEntityDeleted.count}`);
         console.log(`Profiles:  ${profilesDeleted.count}`);
         console.log(`Municipalities: ${municipalitiesDeleted.count}`);
     } catch (error) {

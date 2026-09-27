@@ -26,9 +26,7 @@ export async function executeTransform(
         merged = {
             ...merged,
             ...partial,
-            projects: [...(merged.projects ?? []), ...(partial.projects ?? [])],
-            reports: [...(merged.reports ?? []), ...(partial.reports ?? [])],
-            notices: [...(merged.notices ?? []), ...(partial.notices ?? [])],
+            policyEntities: [...(merged.policyEntities ?? []), ...(partial.policyEntities ?? [])],
         };
     }
 

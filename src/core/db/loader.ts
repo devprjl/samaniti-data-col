@@ -4,9 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import {
     MunicipalityData,
     MunicipalityProfileData,
-    ProjectData,
-    ReportData,
-    NoticeData,
+    PolicyEntityData,
     DocumentData,
     EtlPayload,
 } from "../types/domain.js";
@@ -15,7 +13,6 @@ if (!process.env.DATABASE_URL) {
     throw new Error("[loader] DATABASE_URL environment variable is not set.");
 }
 
-// PrismaPg accepts a connection string, pg.PoolConfig, or pg.Pool directly.
 const adapter = new PrismaPg(process.env.DATABASE_URL);
 export const prisma = new PrismaClient({ adapter });
 
@@ -72,7 +69,6 @@ export async function upsertMunicipalityProfile(data: MunicipalityProfileData): 
 function buildDocumentUpsertQuery(docs?: DocumentData[]) {
     if (!docs || docs.length === 0) return undefined;
 
-    // Deduplicate documents by originalUrl using a Map
     const uniqueDocsMap = new Map<string, DocumentData>();
     for (const doc of docs) {
         if (doc.originalUrl) {
@@ -96,10 +92,10 @@ function buildDocumentUpsertQuery(docs?: DocumentData[]) {
 }
 
 /**
- * Upserts a Project record and links attached documents using `sourceUrl` as unique key.
+ * Upserts a PolicyEntity record and links attached documents using `sourceUrl` as unique key.
  */
-export async function upsertProject(data: ProjectData): Promise<void> {
-    const { municipalityCode, documents, ...projectFields } = data;
+export async function upsertPolicyEntity(data: PolicyEntityData): Promise<{ added: boolean }> {
+    const { municipalityCode, documents, ...entityFields } = data;
 
     const municipality = await prisma.municipality.findUnique({
         where: { code: municipalityCode },
@@ -109,88 +105,65 @@ export async function upsertProject(data: ProjectData): Promise<void> {
         throw new Error(`Municipality with code '${municipalityCode}' not found.`);
     }
 
-    await prisma.project.upsert({
-        where: { sourceUrl: projectFields.sourceUrl },
+    // Check if record already exists to track added vs updated
+    const existing = await prisma.policyEntity.findUnique({
+        where: { sourceUrl: entityFields.sourceUrl },
+    });
+
+    await prisma.policyEntity.upsert({
+        where: { sourceUrl: entityFields.sourceUrl },
         update: {
-            titleNe: projectFields.titleNe,
-            titleEn: projectFields.titleEn,
-            budgetAmount: projectFields.budgetAmount,
-            fiscalYear: projectFields.fiscalYear,
-            status: projectFields.status,
-            wardNo: projectFields.wardNo,
-            type: projectFields.type,
+            category: entityFields.category,
+            titleNe: entityFields.titleNe,
+            titleEn: entityFields.titleEn,
+            contentNe: entityFields.contentNe,
+            contentEn: entityFields.contentEn,
+            type: entityFields.type,
+            fiscalYear: entityFields.fiscalYear,
+            budgetAmount: entityFields.budgetAmount,
+            status: entityFields.status,
+            wardNo: entityFields.wardNo,
+            publishedDate: entityFields.publishedDate,
+            metadata: entityFields.metadata,
             municipalityId: municipality.id,
         },
         create: {
-            ...projectFields,
+            ...entityFields,
             municipalityId: municipality.id,
             documents: buildDocumentUpsertQuery(documents),
         },
     });
+
+    return { added: !existing };
+}
+
+export interface ScraperRunMeta {
+    scraperName: string;
+    durationMs: number;
+    status: string;
+    itemsAdded: number;
+    itemsUpdated: number;
+    error?: string | null;
 }
 
 /**
- * Upserts a Report record and links attached documents using `sourceUrl` as unique key.
+ * Records scraper execution run metrics.
  */
-export async function upsertReport(data: ReportData): Promise<void> {
-    const { municipalityCode, documents, ...reportFields } = data;
-
+export async function recordScraperRun(municipalityCode: string, meta: ScraperRunMeta): Promise<void> {
     const municipality = await prisma.municipality.findUnique({
         where: { code: municipalityCode },
     });
 
-    if (!municipality) {
-        throw new Error(`Municipality with code '${municipalityCode}' not found.`);
-    }
-
-    await prisma.report.upsert({
-        where: { sourceUrl: reportFields.sourceUrl },
-        update: {
-            titleNe: reportFields.titleNe,
-            titleEn: reportFields.titleEn,
-            type: reportFields.type,
-            fiscalYear: reportFields.fiscalYear,
-            publishedDate: reportFields.publishedDate,
-            metadata: reportFields.metadata,
-            municipalityId: municipality.id,
-        },
-        create: {
-            ...reportFields,
-            municipalityId: municipality.id,
-            documents: buildDocumentUpsertQuery(documents),
-        },
-    });
-}
-
-/**
- * Upserts a Notice record and links attached documents using `sourceUrl` as unique key.
- */
-export async function upsertNotice(data: NoticeData): Promise<void> {
-    const { municipalityCode, documents, ...noticeFields } = data;
-
-    const municipality = await prisma.municipality.findUnique({
-        where: { code: municipalityCode },
-    });
-
-    if (!municipality) {
-        throw new Error(`Municipality with code '${municipalityCode}' not found.`);
-    }
-
-    await prisma.notice.upsert({
-        where: { sourceUrl: noticeFields.sourceUrl },
-        update: {
-            titleNe: noticeFields.titleNe,
-            titleEn: noticeFields.titleEn,
-            contentNe: noticeFields.contentNe,
-            type: noticeFields.type,
-            publishedDate: noticeFields.publishedDate,
-            metadata: noticeFields.metadata,
-            municipalityId: municipality.id,
-        },
-        create: {
-            ...noticeFields,
-            municipalityId: municipality.id,
-            documents: buildDocumentUpsertQuery(documents),
+    await prisma.scraperRun.create({
+        data: {
+            municipalityId: municipality?.id ?? null,
+            scraperName: meta.scraperName,
+            status: meta.status,
+            itemsAdded: meta.itemsAdded,
+            itemsUpdated: meta.itemsUpdated,
+            durationMs: meta.durationMs,
+            error: meta.error ?? null,
+            endedAt: new Date(),
         },
     });
 }
@@ -198,35 +171,31 @@ export async function upsertNotice(data: NoticeData): Promise<void> {
 /**
  * Master loader method to run all domain upserts sequentially for a scraper execution.
  */
-export async function loadEtlData(payload: EtlPayload): Promise<void> {
-    console.log("ETL Payload:", payload);
+export async function loadEtlData(
+    payload: EtlPayload,
+): Promise<{ itemsAdded: number; itemsUpdated: number }> {
+    let itemsAdded = 0;
+    let itemsUpdated = 0;
 
     // 1. Upsert target municipality base record
-    await upsertMunicipality(payload.municipality);
+    const mun = await upsertMunicipality(payload.municipality);
 
     // 2. Upsert profile attributes if present
     if (payload.profile) {
         await upsertMunicipalityProfile(payload.profile);
     }
 
-    // 3. Upsert projects list
-    if (payload.projects && payload.projects.length > 0) {
-        for (const project of payload.projects) {
-            await upsertProject(project);
+    // 3. Upsert policy entities list
+    if (payload.policyEntities && payload.policyEntities.length > 0) {
+        for (const entity of payload.policyEntities) {
+            const res = await upsertPolicyEntity(entity);
+            if (res.added) {
+                itemsAdded++;
+            } else {
+                itemsUpdated++;
+            }
         }
     }
 
-    // 4. Upsert reports list
-    if (payload.reports && payload.reports.length > 0) {
-        for (const report of payload.reports) {
-            await upsertReport(report);
-        }
-    }
-
-    // 5. Upsert notices list
-    if (payload.notices && payload.notices.length > 0) {
-        for (const notice of payload.notices) {
-            await upsertNotice(notice);
-        }
-    }
+    return { itemsAdded, itemsUpdated };
 }

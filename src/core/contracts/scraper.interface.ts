@@ -27,6 +27,6 @@ export interface IMunicipalityScraper {
   routes?: RouteConfig[];
   extract(config?: ScraperConfig): Promise<ScrapedPage[]>;
   transform(pages: ScrapedPage[]): Promise<EtlPayload> | EtlPayload;
-  load(data: EtlPayload): Promise<void>;
+  load(data: EtlPayload): Promise<{ itemsAdded: number; itemsUpdated: number }> | Promise<void>;
   run(config?: ScraperConfig): Promise<void>;
 }

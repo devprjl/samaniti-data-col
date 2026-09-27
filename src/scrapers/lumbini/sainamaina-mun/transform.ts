@@ -3,9 +3,7 @@ import {
     DocumentData,
     EtlPayload,
     MunicipalityData,
-    ProjectData,
-    ReportData,
-    NoticeData,
+    PolicyEntityData,
 } from "../../../core/types/domain.js";
 import { ScrapedPage } from "../../../core/contracts/scraper.interface.js";
 import {
@@ -30,15 +28,12 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
 // Shared transformers for listing rows
 // ---------------------------------------------------------------------------
 
-/**
- * Transforms a single row from a listing page into a Project record.
- */
 async function transformProjectRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<any>,
     baseUrl: string,
     category: string,
-): Promise<ProjectData> {
+): Promise<PolicyEntityData> {
     const $titleLink = row.find("h2 a, .views-field-title a").first();
     const titleNe = $titleLink.text().trim().replace(/\s+/g, " ") || "";
     const rawHref = $titleLink.attr("href") || "";
@@ -48,7 +43,6 @@ async function transformProjectRow(
             : `${baseUrl}${rawHref}`
         : "";
 
-    // Collect file attachments in the row
     const docElements = row.find(".file a, a[href$='.pdf']").toArray();
     const documents: DocumentData[] = [];
     for (const docEl of docElements) {
@@ -58,13 +52,13 @@ async function transformProjectRow(
         documents.push(await buildDocument(fileUrl, baseUrl, titleNe, null));
     }
 
-    // If the link itself is a PDF
     if (documents.length === 0 && sourceUrl.endsWith(".pdf")) {
         documents.push(await buildDocument(sourceUrl, baseUrl, titleNe, null));
     }
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "project",
         titleNe,
         titleEn: null,
         budgetAmount: null,
@@ -77,22 +71,18 @@ async function transformProjectRow(
     };
 }
 
-/**
- * Transforms a single row from a listing page into a Report record.
- */
 async function transformReportRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<any>,
     baseUrl: string,
     category: string,
-): Promise<ReportData> {
+): Promise<PolicyEntityData> {
     const $titleLink = row.find(".views-field-title a");
     const titleNe = $titleLink.text().trim() || "";
     const rawSourceUrl = $titleLink.attr("href") || "";
     const publishedDate = row.find(".views-field-created .field-content").text().trim() || null;
 
     const rawFileUrl = row.find(".views-field-field-documents a").attr("href") || null;
-
     const sourceUrl = rawSourceUrl.startsWith("http") ? rawSourceUrl : `${baseUrl}${rawSourceUrl}`;
 
     const documents: DocumentData[] = [];
@@ -102,6 +92,7 @@ async function transformReportRow(
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "report",
         titleNe,
         titleEn: null,
         type: category,
@@ -112,23 +103,20 @@ async function transformReportRow(
     };
 }
 
-/**
- * Transforms a single row from a listing page into a Notice record.
- */
 async function transformNoticeRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<any>,
     baseUrl: string,
     category: string,
-): Promise<NoticeData> {
+): Promise<PolicyEntityData> {
     const $titleLink = row.find(".views-field-title a");
     const titleNe = $titleLink.text().trim() || "";
     const rawSourceUrl = $titleLink.attr("href") || "";
-
     const sourceUrl = rawSourceUrl.startsWith("http") ? rawSourceUrl : `${baseUrl}${rawSourceUrl}`;
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "notice",
         titleNe,
         titleEn: null,
         contentNe: null,
@@ -143,9 +131,6 @@ async function transformNoticeRow(
 // Detail page transformers
 // ---------------------------------------------------------------------------
 
-/**
- * Transforms a project detail page.
- */
 async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
@@ -153,12 +138,11 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
 
-    console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
-
     return {
-        projects: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "project",
                 titleNe,
                 titleEn: null,
                 budgetAmount: null,
@@ -173,9 +157,6 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
     };
 }
 
-/**
- * Transforms a report detail page.
- */
 async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
@@ -184,9 +165,10 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const documents = extractDocumentLinks($, baseUrl);
 
     return {
-        reports: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "report",
                 titleNe,
                 titleEn: null,
                 type: page.category,
@@ -199,18 +181,16 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     };
 }
 
-/**
- * Transforms a notice detail page.
- */
 async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, new URL(page.url).origin);
 
     return {
-        notices: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "notice",
                 titleNe,
                 titleEn: null,
                 contentNe: $(".node-content, .content").text().trim() || null,
@@ -223,22 +203,16 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     };
 }
 
-// ---------------------------------------------------------------------------
-// Listing page transformers
-// ---------------------------------------------------------------------------
-
 async function transformProjectListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
     const rows = $(".views-row").toArray();
 
-    console.log(`[Project Listing] ${rows.length} row(s) found on ${page.url}`);
-
     const projects = await Promise.all(
         rows.map((row) => transformProjectRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { projects };
+    return { policyEntities: projects };
 }
 
 async function transformReportListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
@@ -250,7 +224,7 @@ async function transformReportListing(page: ScrapedPage): Promise<Partial<EtlPay
         rows.map((row) => transformReportRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { reports };
+    return { policyEntities: reports };
 }
 
 async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
@@ -262,23 +236,14 @@ async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPay
         rows.map((row) => transformNoticeRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { notices };
+    return { policyEntities: notices };
 }
 
-// ---------------------------------------------------------------------------
-// Main transform function - routes to correct handler based on routeType
-// ---------------------------------------------------------------------------
-
 const TRANSFORMERS: Record<string, (page: ScrapedPage) => Promise<Partial<EtlPayload>>> = {
-    // Reports
     report: transformReportListing,
     reportDetail: transformReportDetail,
-
-    // Projects
     project: transformProjectListing,
     projectDetail: transformProjectDetail,
-
-    // Notices
     notice: transformNoticeListing,
     noticeDetail: transformNoticeDetail,
 };

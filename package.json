@@ -52,6 +52,7 @@
         "dotenv": "^17.4.2",
         "nepali-date-converter": "^3.4.0",
         "pg": "^8.23.0",
+        "playwright": "^1.63.0",
         "undici": "^8.10.2"
     },
     "devDependencies": {

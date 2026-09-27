@@ -3,9 +3,7 @@ import {
     DocumentData,
     EtlPayload,
     MunicipalityData,
-    ProjectData,
-    ReportData,
-    NoticeData,
+    PolicyEntityData,
 } from "../../../core/types/domain.js";
 import { ScrapedPage } from "../../../core/contracts/scraper.interface.js";
 import {
@@ -31,15 +29,14 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
 // ---------------------------------------------------------------------------
 
 /**
- * Transforms a single row from a listing page into a Project record.
+ * Transforms a single row from a listing page into a PolicyEntity record.
  */
 async function transformProjectRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<cheerio.Element>,
     baseUrl: string,
     category: string,
-): Promise<ProjectData> {
-    // 1. Title and Detail Source URL Extraction
+): Promise<PolicyEntityData> {
     const titleAnchor = row.find(".views-field-title a, h2 a").first();
     const titleNe = titleAnchor.text().trim().replace(/\s+/g, " ") || "";
     const rawHref = titleAnchor.attr("href") || "";
@@ -53,12 +50,10 @@ async function transformProjectRow(
         }
     }
 
-    // 2. Fiscal Year Extraction
     const fiscalYearAnchor = row.find(".views-field-field-fiscal-year a");
     const fiscalYearCellText = fiscalYearAnchor.text().trim();
     const fiscalYear = fiscalYearCellText || parseNepaliFiscalYear(titleNe) || null;
 
-    // 3. Additional Metadata (Creation Date, Fiscal Year Link)
     const createdTd = row.find(".views-field-created");
     const dateCreated = createdTd.text().trim() || null;
     const rawFiscalYearHref = fiscalYearAnchor.attr("href") || "";
@@ -72,11 +67,11 @@ async function transformProjectRow(
         }
     }
 
-    // 4. File attachments scoped strictly to this row
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "project",
         titleNe,
         titleEn: null,
         budgetAmount: null,
@@ -95,14 +90,14 @@ async function transformProjectRow(
 }
 
 /**
- * Transforms a single row from a listing page into a Report record.
+ * Transforms a single row from a listing page into a PolicyEntity record (Report).
  */
 async function transformReportRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<cheerio.Element>,
     baseUrl: string,
     category: string,
-): Promise<ReportData> {
+): Promise<PolicyEntityData> {
     const titleAnchor = row.find(".views-field-title a, h2 a").first();
     const titleNe = titleAnchor.text().trim().replace(/\s+/g, " ") || "";
     const rawHref = titleAnchor.attr("href") || "";
@@ -133,6 +128,7 @@ async function transformReportRow(
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "report",
         titleNe,
         titleEn: null,
         fiscalYear,
@@ -144,15 +140,14 @@ async function transformReportRow(
 }
 
 /**
- * Transforms a single row from a listing page into a Notice record.
+ * Transforms a single row from a listing page into a PolicyEntity record (Notice).
  */
-
 async function transformNoticeRow(
     $: cheerio.CheerioAPI,
     row: cheerio.Cheerio<any>,
     baseUrl: string,
     category: string,
-): Promise<NoticeData> {
+): Promise<PolicyEntityData> {
     const titleAnchor = row.find(".views-field-title a, h2 a, h2, td").first();
     const titleNe = titleAnchor.text().trim().replace(/\s+/g, " ") || "";
     const rawHref = titleAnchor.attr("href") || "";
@@ -166,20 +161,18 @@ async function transformNoticeRow(
         }
     }
 
-    // 2. Fiscal Year Extraction
     const fiscalYearAnchor = row.find(".views-field-field-fiscal-year a");
     const fiscalYearCellText = fiscalYearAnchor.text().trim();
     const fiscalYear = fiscalYearCellText || parseNepaliFiscalYear(titleNe) || null;
 
-    // 3. Additional Metadata (Creation Date, Fiscal Year Link)
     const createdTd = row.find(".views-field-created");
     const dateCreated = createdTd.text().trim() || null;
 
-    // 4. File attachments scoped strictly to this row
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
+        category: "notice",
         titleNe,
         titleEn: null,
         type: category || null,
@@ -196,9 +189,6 @@ async function transformNoticeRow(
 // Detail page transformers
 // ---------------------------------------------------------------------------
 
-/**
- * Transforms a project detail page.
- */
 async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
@@ -209,9 +199,10 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
     console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
 
     return {
-        projects: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "project",
                 titleNe,
                 titleEn: null,
                 budgetAmount: null,
@@ -226,9 +217,6 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
     };
 }
 
-/**
- * Transforms a report detail page.
- */
 async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
@@ -236,8 +224,6 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const titleNe = extractTitle($);
     const publishedDate = extractDate($);
 
-    // Scope document extraction to the detail content area.
-    // Falls back to <body> if the specific selector isn't found.
     const $context = $(".detail__page-inner").length ? $(".detail__page-inner") : $("body");
     const documents = extractDocumentLinks($, baseUrl, $context);
 
@@ -246,9 +232,10 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     );
 
     return {
-        reports: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "report",
                 titleNe,
                 titleEn: null,
                 type: page.category,
@@ -261,10 +248,6 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     };
 }
 
-/**
- * Transforms a notice detail page.
- * Banganga uses the new NEB theme — content is in .detail__page-inner.
- */
 async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
@@ -272,7 +255,6 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const titleNe = extractTitle($);
     const publishedDate = extractDate($);
 
-    // Scope document extraction to the detail content area.
     const $context = $(".detail__page-inner").length ? $(".detail__page-inner") : $("body");
     const documents = extractDocumentLinks($, baseUrl, $context);
 
@@ -281,9 +263,10 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     );
 
     return {
-        notices: [
+        policyEntities: [
             {
                 municipalityCode: MUNICIPALITY_CODE,
+                category: "notice",
                 titleNe,
                 titleEn: null,
                 contentNe: null,
@@ -311,7 +294,7 @@ async function transformProjectListing(page: ScrapedPage): Promise<Partial<EtlPa
         rows.map((row) => transformProjectRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { projects };
+    return { policyEntities: projects };
 }
 
 async function transformReportListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
@@ -319,13 +302,13 @@ async function transformReportListing(page: ScrapedPage): Promise<Partial<EtlPay
     const baseUrl = new URL(page.url).origin;
     const rows = $(".view-content table tbody tr").toArray();
 
-    console.log(`[Project Listing] ${rows.length} row(s) found on ${page.url}`);
+    console.log(`[Report Listing] ${rows.length} row(s) found on ${page.url}`);
 
     const reports = await Promise.all(
         rows.map((row) => transformReportRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { reports };
+    return { policyEntities: reports };
 }
 
 async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
@@ -333,11 +316,13 @@ async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPay
     const baseUrl = new URL(page.url).origin;
     const rows = $(".view-content table tbody tr").toArray();
 
+    console.log(`[Notice Listing] ${rows.length} row(s) found on ${page.url}`);
+
     const notices = await Promise.all(
         rows.map((row) => transformNoticeRow($, $(row), baseUrl, page.category || "")),
     );
 
-    return { notices };
+    return { policyEntities: notices };
 }
 
 // ---------------------------------------------------------------------------
@@ -345,15 +330,12 @@ async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPay
 // ---------------------------------------------------------------------------
 
 const TRANSFORMERS: Record<string, (page: ScrapedPage) => Promise<Partial<EtlPayload>>> = {
-    // Reports
     report: transformReportListing,
     reportDetail: transformReportDetail,
 
-    // Projects
     project: transformProjectListing,
     projectDetail: transformProjectDetail,
 
-    // Notices
     notice: transformNoticeListing,
     noticeDetail: transformNoticeDetail,
 };

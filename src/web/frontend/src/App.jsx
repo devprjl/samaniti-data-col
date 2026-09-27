@@ -1,325 +1,347 @@
-import React, { useState, useEffect } from 'react';
-import './App.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "./App.css";
+import { getPortalData } from "./lib/api";
+import { getMunicipalityName } from "./lib/format";
+import Link from "./components/Link";
+import { useRouter } from "./lib/router";
+import AppShell from "./components/AppShell";
+import { EmptyState, LoadingState } from "./components/Primitives";
+import ActivityPage from "./pages/ActivityPage";
+import DirectoryPage from "./pages/DirectoryPage";
+import MethodologyPage from "./pages/MethodologyPage";
+import MunicipalityPage from "./pages/MunicipalityPage";
+import OverviewPage from "./pages/OverviewPage";
+import PolicyDetailPage from "./pages/PolicyDetailPage";
+import RunDetailPage from "./pages/RunDetailPage";
 
-const NEPAL_PROVINCES = [
-  { id: 'koshi', name: 'Province 1 / Koshi Province', active: false },
-  { id: 'madhesh', name: 'Madhesh Province', active: true },
-  { id: 'bagmati', name: 'Bagmati Province', active: false },
-  { id: 'gandaki', name: 'Gandaki Province', active: false },
-  { id: 'lumbini', name: 'Lumbini Province', active: true },
-  { id: 'karnali', name: 'Karnali Province', active: false },
-  { id: 'sudurpashchim', name: 'Sudurpashchim Province', active: false },
-];
+const emptyPortalData = {
+    municipalities: [],
+    policies: [],
+    scraperRuns: [],
+};
+
+function decodeSegment(segment) {
+    try {
+        return decodeURIComponent(segment);
+    } catch {
+        return segment;
+    }
+}
+
+function parseRoute(pathname) {
+    const segments = pathname.split("/").filter(Boolean).map(decodeSegment);
+
+    if (segments.length === 0) return { page: "overview" };
+    if (segments[0] === "municipalities" && !segments[1]) return { page: "municipalities" };
+    if (segments[0] === "municipalities" && segments[1]) {
+        return { page: "municipality", id: segments[1], tab: segments[2] || "overview" };
+    }
+    if (segments[0] === "policies" && segments[1]) return { page: "policy", id: segments[1] };
+    if (segments[0] === "activity" && segments[1]) return { page: "run", id: segments[1] };
+    if (segments[0] === "activity" && segments.length === 1) return { page: "activity" };
+    if (segments[0] === "methodology" && segments.length === 1) return { page: "methodology" };
+
+    return { page: "not-found" };
+}
+
+function createStats() {
+    return {
+        policyCount: 0,
+        documentCount: 0,
+        categories: {},
+        lastRun: null,
+        lastPolicyAt: null,
+    };
+}
+
+function isNewerDate(candidate, current) {
+    if (!candidate) return false;
+    if (!current) return true;
+    return new Date(candidate).getTime() > new Date(current).getTime();
+}
+
+function NotFoundPage({ pathname }) {
+    return (
+        <div className="page-stack not-found-page">
+            <div className="not-found-code">404</div>
+            <h1>Page not found</h1>
+            <p>The requested page is not part of the Samaniti policy portal.</p>
+            <code>{pathname}</code>
+            <Link className="button button-primary" to="/">
+                Return to overview
+            </Link>
+        </div>
+    );
+}
 
 function App() {
-  const [selectedProvince, setSelectedProvince] = useState(null);
-  const [municipalities, setMunicipalities] = useState([]);
-  const [selectedMunicipality, setSelectedMunicipality] = useState(null);
-  const [activeTab, setActiveTab] = useState('home');
+    const { pathname, search } = useRouter();
+    const [portalData, setPortalData] = useState(emptyPortalData);
+    const [status, setStatus] = useState("loading");
+    const [error, setError] = useState(null);
+    const [lastUpdated, setLastUpdated] = useState(null);
+    const hasLoaded = useRef(false);
+    const requestNumber = useRef(0);
+    const route = useMemo(() => parseRoute(pathname), [pathname]);
 
-  useEffect(() => {
-    fetch('http://localhost:5001/api/municipalities')
-      .then(res => res.json())
-      .then(data => setMunicipalities(data))
-      .catch(err => console.error('Error fetching municipalities:', err));
-  }, []);
+    const loadData = useCallback(async () => {
+        const currentRequest = requestNumber.current + 1;
+        requestNumber.current = currentRequest;
+        setStatus(hasLoaded.current ? "refreshing" : "loading");
+        setError(null);
 
-  const handleSelectProvince = (prov) => {
-    if (!prov.active) return;
-    setSelectedProvince(prov);
-    setSelectedMunicipality(null);
-  };
+        try {
+            const nextData = await getPortalData();
+            if (requestNumber.current !== currentRequest) return;
 
-  const handleSelectMunicipality = (mun) => {
-    // Fetch full details including projects, reports, notices & documents
-    fetch(`http://localhost:5001/api/municipalities/${mun.id}`)
-      .then(res => res.json())
-      .then(data => setSelectedMunicipality(data))
-      .catch(err => console.error('Error fetching municipality details:', err));
-  };
+            setPortalData(nextData);
+            setLastUpdated(new Date());
+            hasLoaded.current = true;
+            setStatus("ready");
+        } catch (requestError) {
+            if (requestNumber.current !== currentRequest) return;
+            setError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "The backend returned an unexpected response.",
+            );
+            setStatus(hasLoaded.current ? "ready" : "error");
+        }
+    }, []);
 
-  return (
-    <div className="container" style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1>Scrape Data Viewer</h1>
-      <p style={{ color: '#666' }}>Explore Nepalese municipalities data, projects, reports, notices, and attached files.</p>
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
-      {!selectedProvince ? (
-        <div>
-          <h2>Select a Province</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px', marginTop: '15px' }}>
-            {NEPAL_PROVINCES.map(prov => (
-              <div
-                key={prov.id}
-                onClick={() => handleSelectProvince(prov)}
-                style={{
-                  border: '1px solid #ddd',
-                  padding: '20px',
-                  borderRadius: '8px',
-                  cursor: prov.active ? 'pointer' : 'not-allowed',
-                  opacity: prov.active ? 1 : 0.5,
-                  background: prov.active ? '#f0f8ff' : '#f9f9f9',
-                  boxShadow: prov.active ? '0 2px 5px rgba(0,0,0,0.1)' : 'none'
-                }}
-              >
-                <h3>{prov.name}</h3>
-                <p style={{ fontSize: '14px', color: prov.active ? '#0070f3' : '#888' }}>
-                  {prov.active ? (prov.id === 'lumbini' ? 'Active (1 Municipality)' : 'Active (No Data Yet)') : 'Coming Soon'}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : !selectedMunicipality ? (
-        <div>
-          <button onClick={() => setSelectedProvince(null)} style={{ marginBottom: '15px', padding: '8px 12px', cursor: 'pointer' }}>← Back to Provinces</button>
-          <h2>Municipalities in {selectedProvince.name}</h2>
-          {selectedProvince.id === 'madhesh' ? (
-            <p style={{ color: '#666', fontStyle: 'italic' }}>No municipalities scraped yet for Madhesh Province.</p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px', marginTop: '15px' }}>
-              {municipalities.map(mun => (
-                <div
-                  key={mun.id}
-                  onClick={() => handleSelectMunicipality(mun)}
-                  style={{
-                    border: '1px solid #ccc',
-                    padding: '20px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: '#fff',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  <h3>{mun.nameEn} ({mun.nameNe})</h3>
-                  <p>District: {mun.district}</p>
-                  <p>Province: {mun.province}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div>
-          <button onClick={() => setSelectedMunicipality(null)} style={{ marginBottom: '15px', padding: '8px 12px', cursor: 'pointer' }}>← Back to Municipalities</button>
-          <h2>{selectedMunicipality.nameEn} ({selectedMunicipality.nameNe})</h2>
-          <p style={{ color: '#666' }}>District: {selectedMunicipality.district} | Province: {selectedMunicipality.province}</p>
+    const { municipalities, policies, scraperRuns: runs } = portalData;
 
-          <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #eee', paddingBottom: '10px', margin: '20px 0' }}>
-            <button
-              onClick={() => setActiveTab('home')}
-              style={{ padding: '8px 16px', cursor: 'pointer', background: activeTab === 'home' ? '#0070f3' : '#f0f0f0', color: activeTab === 'home' ? '#fff' : '#000', border: 'none', borderRadius: '4px' }}
-            >
-              Home / Profile
-            </button>
-            <button
-              onClick={() => setActiveTab('projects')}
-              style={{ padding: '8px 16px', cursor: 'pointer', background: activeTab === 'projects' ? '#0070f3' : '#f0f0f0', color: activeTab === 'projects' ? '#fff' : '#000', border: 'none', borderRadius: '4px' }}
-            >
-              Projects ({selectedMunicipality.projects?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('notices')}
-              style={{ padding: '8px 16px', cursor: 'pointer', background: activeTab === 'notices' ? '#0070f3' : '#f0f0f0', color: activeTab === 'notices' ? '#fff' : '#000', border: 'none', borderRadius: '4px' }}
-            >
-              Notices ({selectedMunicipality.notices?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('reports')}
-              style={{ padding: '8px 16px', cursor: 'pointer', background: activeTab === 'reports' ? '#0070f3' : '#f0f0f0', color: activeTab === 'reports' ? '#fff' : '#000', border: 'none', borderRadius: '4px' }}
-            >
-              Reports ({selectedMunicipality.reports?.length || 0})
-            </button>
-          </div>
+    const municipalityById = useMemo(
+        () => new Map(municipalities.map((municipality) => [municipality.id, municipality])),
+        [municipalities],
+    );
+    const municipalityByCode = useMemo(
+        () =>
+            new Map(
+                municipalities.map((municipality) => [
+                    String(municipality.code || "").toLowerCase(),
+                    municipality,
+                ]),
+            ),
+        [municipalities],
+    );
+    const policyById = useMemo(
+        () => new Map(policies.map((policy) => [policy.id, policy])),
+        [policies],
+    );
+    const runById = useMemo(() => new Map(runs.map((run) => [run.id, run])), [runs]);
 
-          {activeTab === 'home' && (
-            <div style={{ background: '#f9f9f9', padding: '20px', borderRadius: '8px' }}>
-              <h3>Municipality Profile</h3>
-              {selectedMunicipality.profile ? (
-                <ul style={{ lineHeight: '1.8' }}>
-                  <li><strong>Established (BS):</strong> {selectedMunicipality.profile.establishedBs || 'N/A'}</li>
-                  <li><strong>Total Wards:</strong> {selectedMunicipality.profile.totalWards || 'N/A'}</li>
-                  <li><strong>Population:</strong> {selectedMunicipality.profile.population || 'N/A'}</li>
-                  <li><strong>Area (Sq Km):</strong> {selectedMunicipality.profile.areaSqKm || 'N/A'}</li>
-                  <li><strong>Email:</strong> {selectedMunicipality.profile.email || 'N/A'}</li>
-                  <li><strong>Website:</strong> {selectedMunicipality.profile.website ? <a href={selectedMunicipality.profile.website} target="_blank" rel="noreferrer">{selectedMunicipality.profile.website}</a> : 'N/A'}</li>
-                </ul>
-              ) : (
-                <p>No profile data available.</p>
-              )}
-            </div>
-          )}
+    const policiesByMunicipality = useMemo(() => {
+        const grouped = new Map();
 
-          {activeTab === 'projects' && (
-            <div>
-              <h3>Projects</h3>
-              {selectedMunicipality.projects && selectedMunicipality.projects.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table border="1" cellPadding="10" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-                    <thead>
-                      <tr style={{ background: '#f1f1f1' }}>
-                        <th>Title (Nepali)</th>
-                        <th>Title (English)</th>
-                        <th>Budget</th>
-                        <th>Fiscal Year</th>
-                        <th>Status</th>
-                        <th>Source Link</th>
-                        <th>Documents</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedMunicipality.projects.map(p => (
-                        <tr key={p.id}>
-                          <td>{p.titleNe}</td>
-                          <td>{p.titleEn || '-'}</td>
-                          <td>{p.budgetAmount ? `NPR ${p.budgetAmount}` : '-'}</td>
-                          <td>{p.fiscalYear || '-'}</td>
-                          <td>{p.status || '-'}</td>
-                          <td>
-                            {p.sourceUrl ? (
-                              <a href={p.sourceUrl} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                🌐 View Page
-                              </a>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                          <td>
-                            {p.documents && p.documents.length > 0 ? (
-                              p.documents.map(d => (
-                                <div key={d.id} style={{ marginBottom: '4px' }}>
-                                  <a href={`http://localhost:5001/api/documents/${d.id}/download`} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                    📥 {d.fileName || 'Download File'}
-                                  </a>
-                                </div>
-                              ))
-                            ) : (
-                              <span style={{ color: '#888' }}>No file</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p>No projects found.</p>
-              )}
-            </div>
-          )}
+        for (const policy of policies) {
+            const group = grouped.get(policy.municipalityId) || [];
+            group.push(policy);
+            grouped.set(policy.municipalityId, group);
+        }
 
-          {activeTab === 'notices' && (
-            <div>
-              <h3>Notices</h3>
-              {selectedMunicipality.notices && selectedMunicipality.notices.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table border="1" cellPadding="10" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-                    <thead>
-                      <tr style={{ background: '#f1f1f1' }}>
-                        <th>Title (Nepali)</th>
-                        <th>Notice Type</th>
-                        <th>Published Date</th>
-                        <th>Source Link</th>
-                        <th>Documents</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedMunicipality.notices.map(n => (
-                        <tr key={n.id}>
-                          <td>{n.titleNe}</td>
-                          <td>{n.noticeType || '-'}</td>
-                          <td>{n.publishedDate || '-'}</td>
-                          <td>
-                            {n.sourceUrl ? (
-                              <a href={n.sourceUrl} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                🌐 View Page
-                              </a>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                          <td>
-                            {n.documents && n.documents.length > 0 ? (
-                              n.documents.map(d => (
-                                <div key={d.id} style={{ marginBottom: '4px' }}>
-                                  <a href={`http://localhost:5001/api/documents/${d.id}/download`} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                    📥 {d.fileName || 'Download File'}
-                                  </a>
-                                </div>
-                              ))
-                            ) : (
-                              <span style={{ color: '#888' }}>No file</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p>No notices found.</p>
-              )}
-            </div>
-          )}
+        return grouped;
+    }, [policies]);
 
-          {activeTab === 'reports' && (
-            <div>
-              <h3>Reports</h3>
-              {selectedMunicipality.reports && selectedMunicipality.reports.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table border="1" cellPadding="10" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-                    <thead>
-                      <tr style={{ background: '#f1f1f1' }}>
-                        <th>Title (Nepali)</th>
-                        <th>Report Type</th>
-                        <th>Fiscal Year</th>
-                        <th>Published Date</th>
-                        <th>Source Link</th>
-                        <th>Documents</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedMunicipality.reports.map(r => (
-                        <tr key={r.id}>
-                          <td>{r.titleNe}</td>
-                          <td>{r.reportType || '-'}</td>
-                          <td>{r.fiscalYear || '-'}</td>
-                          <td>{r.publishedDate || '-'}</td>
-                          <td>
-                            {r.sourceUrl ? (
-                              <a href={r.sourceUrl} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                🌐 View Page
-                              </a>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                          <td>
-                            {r.documents && r.documents.length > 0 ? (
-                              r.documents.map(d => (
-                                <div key={d.id} style={{ marginBottom: '4px' }}>
-                                  <a href={`http://localhost:5001/api/documents/${d.id}/download`} target="_blank" rel="noreferrer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                                    📥 {d.fileName || 'Download File'}
-                                  </a>
-                                </div>
-                              ))
-                            ) : (
-                              <span style={{ color: '#888' }}>No file</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p>No reports found.</p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+    const runsByMunicipality = useMemo(() => {
+        const grouped = new Map();
+
+        for (const run of runs) {
+            const municipalityId =
+                run.municipalityId ||
+                municipalityByCode.get(String(run.scraperName || "").toLowerCase())?.id;
+            if (!municipalityId) continue;
+            const group = grouped.get(municipalityId) || [];
+            group.push(run);
+            grouped.set(municipalityId, group);
+        }
+
+        return grouped;
+    }, [municipalityByCode, runs]);
+
+    const directory = useMemo(() => {
+        const statsByMunicipality = new Map();
+
+        for (const municipality of municipalities) {
+            statsByMunicipality.set(municipality.id, createStats());
+        }
+
+        for (const policy of policies) {
+            const stats = statsByMunicipality.get(policy.municipalityId);
+            if (!stats) continue;
+            stats.policyCount += 1;
+            stats.documentCount += policy.documents?.length || 0;
+            const category = String(policy.category || "other").toLowerCase();
+            stats.categories[category] = (stats.categories[category] || 0) + 1;
+            if (isNewerDate(policy.createdAt, stats.lastPolicyAt))
+                stats.lastPolicyAt = policy.createdAt;
+        }
+
+        for (const run of runs) {
+            const municipalityId =
+                run.municipalityId ||
+                municipalityByCode.get(String(run.scraperName || "").toLowerCase())?.id;
+            const stats = statsByMunicipality.get(municipalityId);
+            if (!stats) continue;
+            if (isNewerDate(run.startedAt, stats.lastRun?.startedAt)) stats.lastRun = run;
+        }
+
+        return municipalities.map((municipality) => ({
+            municipality,
+            stats: statsByMunicipality.get(municipality.id) || createStats(),
+        }));
+    }, [municipalities, municipalityByCode, policies, runs]);
+
+    const coverage = useMemo(() => {
+        const byProvince = new Map();
+
+        for (const entry of directory) {
+            const province = entry.municipality.province || "Unspecified";
+            const current = byProvince.get(province) || {
+                province,
+                municipalityCount: 0,
+                policyCount: 0,
+                documentCount: 0,
+            };
+            current.municipalityCount += 1;
+            current.policyCount += entry.stats.policyCount;
+            current.documentCount += entry.stats.documentCount;
+            byProvince.set(province, current);
+        }
+
+        return [...byProvince.values()].sort((first, second) =>
+            first.province.localeCompare(second.province),
+        );
+    }, [directory]);
+
+    const categoryCounts = useMemo(
+        () =>
+            policies.reduce((counts, policy) => {
+                const category = String(policy.category || "other").toLowerCase();
+                counts[category] = (counts[category] || 0) + 1;
+                return counts;
+            }, {}),
+        [policies],
+    );
+
+    const documentCount = useMemo(
+        () => policies.reduce((total, policy) => total + (policy.documents?.length || 0), 0),
+        [policies],
+    );
+    const successfulRuns = useMemo(
+        () => runs.filter((run) => String(run.status || "").toLowerCase() === "success").length,
+        [runs],
+    );
+
+    const activeMunicipality =
+        route.page === "municipality" ? municipalityById.get(route.id) : null;
+    const activePolicy = route.page === "policy" ? policyById.get(route.id) : null;
+    const activePolicyMunicipality = activePolicy
+        ? municipalityById.get(activePolicy.municipalityId)
+        : null;
+    const activeRun = route.page === "run" ? runById.get(route.id) : null;
+    const activeRunMunicipality = activeRun
+        ? activeRun.municipality ||
+          municipalityById.get(activeRun.municipalityId) ||
+          municipalityByCode.get(String(activeRun.scraperName || "").toLowerCase())
+        : null;
+    const municipalityName = activeMunicipality
+        ? getMunicipalityName(activeMunicipality)
+        : activeRunMunicipality
+          ? getMunicipalityName(activeRunMunicipality)
+          : null;
+
+    let page = null;
+
+    if (status === "loading" && municipalities.length === 0 && policies.length === 0) {
+        page = <LoadingState />;
+    } else if (status === "error" && municipalities.length === 0 && policies.length === 0) {
+        page = (
+            <EmptyState
+                action={
+                    <button className="button button-primary" onClick={loadData} type="button">
+                        Try again
+                    </button>
+                }
+                description="Start the backend API or check its connection settings, then retry."
+                icon="alert"
+                title="Portal data is unavailable"
+            />
+        );
+    } else if (route.page === "overview") {
+        page = (
+            <OverviewPage
+                categoryCounts={categoryCounts}
+                coverage={coverage}
+                directory={directory}
+                documentCount={documentCount}
+                municipalities={municipalities}
+                policies={policies}
+                runs={runs}
+                successfulRuns={successfulRuns}
+            />
+        );
+    } else if (route.page === "municipalities") {
+        page = (
+            <DirectoryPage
+                key={search}
+                directory={directory}
+                municipalities={municipalities}
+                policies={policies}
+            />
+        );
+    } else if (route.page === "municipality") {
+        page = activeMunicipality ? (
+            <MunicipalityPage
+                municipality={activeMunicipality}
+                municipalityByCode={municipalityByCode}
+                municipalityById={municipalityById}
+                policies={policiesByMunicipality.get(activeMunicipality.id) || []}
+                runs={runsByMunicipality.get(activeMunicipality.id) || []}
+                stats={
+                    directory.find((entry) => entry.municipality.id === activeMunicipality.id)
+                        ?.stats || createStats()
+                }
+            />
+        ) : (
+            <NotFoundPage pathname={pathname} />
+        );
+    } else if (route.page === "policy") {
+        page = <PolicyDetailPage municipality={activePolicyMunicipality} policy={activePolicy} />;
+    } else if (route.page === "run") {
+        page = <RunDetailPage municipality={activeRunMunicipality} run={activeRun} />;
+    } else if (route.page === "activity") {
+        page = (
+            <ActivityPage
+                municipalityByCode={municipalityByCode}
+                municipalityById={municipalityById}
+                municipalities={municipalities}
+                runs={runs}
+            />
+        );
+    } else if (route.page === "methodology") {
+        page = <MethodologyPage />;
+    } else {
+        page = <NotFoundPage pathname={pathname} />;
+    }
+
+    return (
+        <AppShell
+            error={error}
+            lastUpdated={lastUpdated}
+            municipalityName={municipalityName}
+            onRefresh={loadData}
+            onRetry={loadData}
+            route={route}
+            status={status}
+        >
+            {page}
+        </AppShell>
+    );
 }
 
 export default App;
