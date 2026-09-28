@@ -19,6 +19,13 @@ const API_BASE_URL = (
 export const SCRAPER_WORKSPACE_ENABLED = import.meta.env.VITE_SCRAPER_WORKSPACE !== "false";
 
 /**
+ * Error code the backend returns when the workspace is switched off, which it is on
+ * any deployment. Lets the workspace page explain itself instead of reporting a
+ * failure, since nothing has actually gone wrong.
+ */
+export const SCRAPER_WORKSPACE_DISABLED = "scraper_workspace_disabled";
+
+/**
  * Turns an API failure into something readable.
  *
  * The `error` field is not always a string. A host that rejects the request itself
@@ -60,7 +67,12 @@ export async function apiRequest(path, options = {}) {
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
-        throw new Error(describeError(payload, response, path));
+        const failure = new Error(describeError(payload, response, path));
+        // Carried alongside the message so callers can branch on why a request
+        // failed without matching on the wording of the error.
+        failure.status = response.status;
+        failure.code = typeof payload?.error === "object" ? (payload.error.code ?? null) : null;
+        throw failure;
     }
 
     return payload;

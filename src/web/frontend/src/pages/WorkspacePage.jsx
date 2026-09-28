@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CopyButton from "../components/CopyButton";
 import Icon from "../components/Icon";
+import Link from "../components/Link";
 import PolicyTable from "../components/PolicyTable";
 import RouteConfigInspector from "../components/RouteConfigInspector";
 import RunLog from "../components/RunLog";
+import { SCRAPER_WORKSPACE_DISABLED } from "../lib/api";
 import {
     Badge,
     CategoryBadge,
@@ -115,6 +117,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
     const [workspace, setWorkspace] = useState(null);
     const [status, setStatus] = useState("loading");
     const [error, setError] = useState(null);
+    const [errorCode, setErrorCode] = useState(null);
     const [run, setRun] = useState(null);
     const [runError, setRunError] = useState(null);
     const [startingKey, setStartingKey] = useState(null);
@@ -128,6 +131,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
             setWorkspace(data);
             setStatus("ready");
             setError(null);
+            setErrorCode(null);
 
             // Re-attach to a run that is already in flight (e.g. after a reload).
             if (data.running?.id) {
@@ -136,6 +140,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
             }
         } catch (requestError) {
             setStatus("error");
+            setErrorCode(requestError?.code ?? null);
             setError(
                 requestError instanceof Error
                     ? requestError.message
@@ -308,6 +313,45 @@ export default function WorkspacePage({ policies, onDataChanged }) {
     }
 
     if (status === "loading") return <LoadingState label="Loading route configurations" />;
+
+    // A read-only deployment refuses this route on purpose. That is a different
+    // situation from the backend being unreachable, and saying so beats an alert
+    // that blames a database which is in fact working: the records on every other
+    // page are being served from it.
+    if (errorCode === SCRAPER_WORKSPACE_DISABLED) {
+        return (
+            <div className="page-stack">
+                <PageHeader
+                    description="This deployment serves the collected records only. Scraping runs on a maintainer's machine against the portal, never from the site itself."
+                    eyebrow="Scraper control"
+                    title="Route workspace"
+                />
+                <section className="panel workspace-guide-panel">
+                    <EmptyState
+                        description="Starting a run is a write operation that sends requests to live government portals from this host's address, so it is switched off on a public instance. Everything collected so far is still browsable in the directory, the overview and the record pages."
+                        icon="terminal"
+                        title="Scraping is disabled on this deployment"
+                    />
+                    <div className="panel-note">
+                        <Icon name="info" size={17} />
+                        <span>
+                            To collect new records, clone the repository and run{" "}
+                            <code>npm run scraper &lt;province&gt;</code> from a machine with
+                            database access. The portal picks up the results on its next sync.
+                        </span>
+                    </div>
+                    <div className="workspace-guide-actions">
+                        <Link className="button button-secondary" to="/">
+                            Back to overview <Icon name="arrow-right" size={15} />
+                        </Link>
+                        <Link className="button button-secondary" to="/activity">
+                            View collection activity
+                        </Link>
+                    </div>
+                </section>
+            </div>
+        );
+    }
 
     if (status === "error") {
         return (

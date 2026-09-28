@@ -204,8 +204,16 @@ app.get("/api/health", (_req, res) => {
 if (workspaceRouter) {
     app.use("/api/workspace", workspaceRouter);
 } else {
+    // A stable code, so the frontend can tell "this deployment is read-only by
+    // design" apart from "the database is unreachable". Both arrive as a failed
+    // request and a generic error message would blame the wrong thing.
     app.use("/api/workspace", (_req, res) => {
-        res.status(404).json({ error: "The scraper workspace is disabled on this instance." });
+        res.status(404).json({
+            error: {
+                code: "scraper_workspace_disabled",
+                message: "Scraping is disabled on this deployment.",
+            },
+        });
     });
 }
 
