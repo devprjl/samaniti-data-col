@@ -1,4 +1,13 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5001").replace(/\/$/, "");
+/**
+ * Base URL of the API.
+ *
+ * A full-stack deployment serves the portal and the API from one origin, so the
+ * current origin is the right default and needs no configuration. Local development
+ * points at the backend dev server via src/web/frontend/.env.development.
+ */
+const API_BASE_URL = (
+    import.meta.env.VITE_API_URL || (typeof window === "undefined" ? "" : window.location.origin)
+).replace(/\/$/, "");
 
 /**
  * Whether the scraper workspace is offered in this build.

@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { municipalitySelect, policyListSelect, policySelect } from "./selects.js";
@@ -212,6 +212,22 @@ app.use((error, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-    console.log(`Backend running on port ${PORT}`);
-});
+
+/**
+ * True only when this file is the process entry point.
+ *
+ * A serverless runtime imports the app and calls it as a request handler, and a
+ * `listen` there would open a socket nothing ever accepts on, so the server is
+ * started exclusively for `npm run web:backend:start` and `tsx index.js`.
+ */
+const isEntryPoint =
+    Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntryPoint) {
+    app.listen(PORT, () => {
+        console.log(`Backend running on port ${PORT}`);
+    });
+}
+
+export { app };
+export default app;
