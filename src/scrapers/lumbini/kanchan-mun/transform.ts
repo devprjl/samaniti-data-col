@@ -11,7 +11,7 @@ import {
     extractTitle,
     extractDocumentLinks,
     buildDocument,
-    extractDate,
+    extractFiscalYear,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
 
@@ -160,6 +160,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    const fiscalYear = extractFiscalYear($);
 
     return {
         policyEntities: [
@@ -169,7 +170,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
                 titleNe,
                 titleEn: null,
                 budgetAmount: null,
-                fiscalYear: parseNepaliFiscalYear(titleNe) || null,
+                fiscalYear,
                 status: "",
                 wardNo: null,
                 sourceUrl: decodeURIComponent(page.url),
@@ -186,6 +187,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    const fiscalYear = extractFiscalYear($);
 
     return {
         policyEntities: [
@@ -195,7 +197,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
                 titleNe,
                 titleEn: null,
                 type: page.category,
-                fiscalYear: parseNepaliFiscalYear(titleNe) || null,
+                fiscalYear,
                 publishedDate: null,
                 sourceUrl: decodeURIComponent(page.url),
                 documents,
@@ -253,7 +255,7 @@ async function transformReportListing(page: ScrapedPage): Promise<Partial<EtlPay
 async function transformNoticeListing(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
-    const rows = $(".views-row").toArray();
+    const rows = $("table tbody tr").toArray();
 
     const notices = await Promise.all(
         rows.map((row) => transformNoticeRow($, $(row), baseUrl, page.category || "")),
