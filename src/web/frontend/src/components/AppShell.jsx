@@ -120,18 +120,9 @@ export default function AppShell({
                 </div>
 
                 <div className="sidebar-bottom">
-                    <div className="coverage-note">
-                        <span className="coverage-note-mark">
-                            <Icon name="layers" size={16} />
-                        </span>
-                        <div>
-                            <strong>Madhesh + Lumbini</strong>
-                            <span>Provincial collection scope</span>
-                        </div>
-                    </div>
                     <div className="sidebar-meta">
                         <span>Samaniti data portal</span>
-                        <span>v1.0 · Read-only</span>
+                        <span>v1.0</span>
                     </div>
                 </div>
             </aside>
