@@ -18,6 +18,35 @@ const API_BASE_URL = (
  */
 export const SCRAPER_WORKSPACE_ENABLED = import.meta.env.VITE_SCRAPER_WORKSPACE !== "false";
 
+/**
+ * Turns an API failure into something readable.
+ *
+ * The `error` field is not always a string. A host that rejects the request itself
+ * answers with a structured body — Vercel returns `{ error: { code, message } }` for
+ * a crashed function or an oversized payload — and passing that object straight to
+ * `new Error` coerces it to the literal text "[object Object]", which throws away
+ * the only clue about what went wrong.
+ */
+function describeError(payload, response, path) {
+    const error = payload?.error;
+    const where = ` (${path})`;
+
+    if (typeof error === "string" && error) return `${error}${where}`;
+
+    if (error && typeof error === "object") {
+        const parts = [error.code, error.message].filter(Boolean);
+        if (parts.length > 0) return `${parts.join(": ")}${where}`;
+    }
+
+    // A non-JSON body means something in front of the API answered, such as a
+    // proxy or an error page, so say so rather than reporting a bare status.
+    if (payload === null) {
+        return `The server returned a non-JSON response (status ${response.status})${where}.`;
+    }
+
+    return `Request failed with status ${response.status}${where}`;
+}
+
 export async function apiRequest(path, options = {}) {
     const response = await fetch(`${API_BASE_URL}${path}`, {
         ...options,
@@ -31,7 +60,7 @@ export async function apiRequest(path, options = {}) {
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
-        throw new Error(payload?.error || `Request failed with status ${response.status}`);
+        throw new Error(describeError(payload, response, path));
     }
 
     return payload;
