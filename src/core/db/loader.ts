@@ -110,6 +110,21 @@ export async function upsertPolicyEntity(data: PolicyEntityData): Promise<{ adde
         where: { sourceUrl: entityFields.sourceUrl },
     });
 
+    // `sourceUrl` is unique, so an existing row means this URL was already written
+    // and the upsert below replaces its contents. The previous values are about to
+    // be lost, so report them while they can still be seen. A repeat from the same
+    // route is a routine refresh; a different route means two routes list the same
+    // page and only the last writer survives.
+    if (existing) {
+        const sameRoute = existing.type === entityFields.type;
+        console.warn(
+            `[loader] ${sameRoute ? "Repeat" : "Cross-route collision"} on ${entityFields.sourceUrl}` +
+                ` — first written by route '${existing.type || "unknown"}', now overwritten by` +
+                ` route '${entityFields.type || "unknown"}'` +
+                ` (title: '${existing.titleNe}' -> '${entityFields.titleNe}').`,
+        );
+    }
+
     await prisma.policyEntity.upsert({
         where: { sourceUrl: entityFields.sourceUrl },
         update: {
@@ -149,7 +164,10 @@ export interface ScraperRunMeta {
 /**
  * Records scraper execution run metrics.
  */
-export async function recordScraperRun(municipalityCode: string, meta: ScraperRunMeta): Promise<void> {
+export async function recordScraperRun(
+    municipalityCode: string,
+    meta: ScraperRunMeta,
+): Promise<void> {
     const municipality = await prisma.municipality.findUnique({
         where: { code: municipalityCode },
     });
@@ -178,7 +196,7 @@ export async function loadEtlData(
     let itemsUpdated = 0;
 
     // 1. Upsert target municipality base record
-    const mun = await upsertMunicipality(payload.municipality);
+    await upsertMunicipality(payload.municipality);
 
     // 2. Upsert profile attributes if present
     if (payload.profile) {
