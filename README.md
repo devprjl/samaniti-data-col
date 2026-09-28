@@ -240,6 +240,30 @@ the bundle too. The entrypoint was never the problem. Note also that the schema
 types `includeFiles` as a single glob string, so an array there fails validation
 on every deploy.
 
+The install command is `npm ci --include=dev`, which is not optional. A Vercel
+build needs its devDependencies — esbuild bundles the backend, vite builds the
+frontend, the Prisma CLI generates the client — and Vercel runs the install with
+`NODE_ENV=production`, which makes npm omit them. Without `--include=dev` the
+install dies at exit 127 on `prepare`, or the build dies later on a missing
+binary. `prepare` is `husky || true` for the same reason: a git hook installer is
+not a build requirement and must not be able to fail a deploy.
+
+### Checking a deployment before deploying it
+
+```bash
+DATABASE_URL=... npm run verify:deploy
+```
+
+This is the deploy rehearsed locally, in six stages: the schema, the install in a
+production environment, the build, the generated Prisma client, the file trace,
+and finally the packaged function booted on its own and answering every route
+against a real database. Each of those has been a deploy-only failure that every
+other local check passed straight through, which is the reason it exists. Pass
+`--skip-install` to reuse the current `node_modules` and skip stages two to four.
+
+It tests the working tree, not the last commit, so uncommitted changes are
+covered rather than quietly skipped.
+
 ### Environment variables
 
 Two, on the project:
@@ -307,6 +331,8 @@ Prisma not to use them.
 | `npm run db:push`            | Apply `schema.prisma` to the database                  |
 | `npm run db:reset`           | **Destructive** reset for local development            |
 | `npm run lint` / `lint:fix`  | ESLint over the TypeScript sources                     |
+| `npm run verify`             | Lint + type-check, no build                            |
+| `npm run verify:deploy`      | Rehearse the whole Vercel build and boot the function  |
 | `npm run format`             | Prettier write                                         |
 | `npm run format:check`       | Prettier verification                                  |
 
