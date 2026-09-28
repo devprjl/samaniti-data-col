@@ -14,6 +14,12 @@ async function main() {
         const documentsDeleted = await prisma.document.deleteMany({});
         console.log(`✅ Deleted ${documentsDeleted.count} documents\n`);
 
+        // Run history would otherwise survive the reset and keep reporting
+        // collection counts for records that no longer exist.
+        console.log("Deleting scraper runs...");
+        const scraperRunsDeleted = await prisma.scraperRun.deleteMany({});
+        console.log(`✅ Deleted ${scraperRunsDeleted.count} scraper runs\n`);
+
         // Delete all the policy entities
         console.log("Deleting Policy Entities...");
         const policyEntityDeleted = await prisma.policyEntity.deleteMany({});
@@ -33,8 +39,9 @@ async function main() {
         console.log("\nSummary:");
         console.log(`Documents: ${documentsDeleted.count}`);
         console.log(`Policy Entities:   ${policyEntityDeleted.count}`);
+        console.log(`Scraper Runs:   ${scraperRunsDeleted.count}`);
         console.log(`Profiles:  ${profilesDeleted.count}`);
-        console.log(`Municipalities: ${municipalitiesDeleted.count}`);
+        console.log(`Municipalities:  ${municipalitiesDeleted.count}`);
     } catch (error) {
         console.error("❌ Error during database reset:", error);
         process.exit(1);

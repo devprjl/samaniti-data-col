@@ -19,7 +19,7 @@ export const MUNICIPALITY_CODE = "DURGABHAGWATI";
 export const MUNICIPALITY_METADATA: MunicipalityData = {
     code: MUNICIPALITY_CODE,
     nameNe: "दुर्गा भगवती गाउँपालिका",
-    nameEn: " दुर्गा भगवती Rural Municipality",
+    nameEn: "Durgabhagwati Rural Municipality",
     province: "Madhesh",
     district: "Rautahat",
 };
@@ -331,7 +331,7 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
 
     // FIXED: Target the views-row directly where each notice resides
     const rows = $(".view-documents .views-row").toArray();
-    console.log(`[Unstructured Notice] \({rows.length} row(s) found on\){page.url}`);
+    console.log(`[Unstructured Notice] \(${rows.length} row(s) found on\)${page.url}`);
 
     const notices = await Promise.all(
         rows.map(async (rowElement) => {

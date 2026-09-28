@@ -1,21 +1,12 @@
 import "dotenv/config";
-import path from "node:path";
-import fs from "node:fs";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline";
+import { getAvailableScrapers, matchTargets, ScraperTarget } from "./src/core/scraper/registry.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export interface ScraperTarget {
-    province: string;
-    municipality: string;
-    cleanMun: string;
-    path: string;
-    displayName: string;
-}
+export type { ScraperTarget } from "./src/core/scraper/registry.js";
+export { getAvailableScrapers } from "./src/core/scraper/registry.js";
 
 export interface ScraperResult {
     target: ScraperTarget;
@@ -25,38 +16,13 @@ export interface ScraperResult {
     error?: string;
 }
 
-export function getAvailableScrapers(): ScraperTarget[] {
-    const scrapersDir = path.join(__dirname, "src", "scrapers");
-    const results: ScraperTarget[] = [];
-
-    if (!fs.existsSync(scrapersDir)) return results;
-
-    const provinces = fs.readdirSync(scrapersDir, { withFileTypes: true });
-    for (const prov of provinces) {
-        if (!prov.isDirectory()) continue;
-        const provName = prov.name;
-        const provPath = path.join(scrapersDir, provName);
-
-        const municipalities = fs.readdirSync(provPath, { withFileTypes: true });
-        for (const mun of municipalities) {
-            if (!mun.isDirectory()) continue;
-            const munName = mun.name;
-            const indexPath = path.join(provPath, munName, "index.ts");
-            if (fs.existsSync(indexPath)) {
-                const cleanMun = munName.replace(/-mun$/, "");
-                results.push({
-                    province: provName,
-                    municipality: munName,
-                    cleanMun,
-                    path: indexPath,
-                    displayName: `${provName}:${cleanMun}`,
-                });
-            }
-        }
-    }
-    return results;
-}
-
+/**
+ * Resolves a CLI target to the scrapers it should run.
+ *
+ * Route level keys (`<province>:<municipality>:<route>`) are served by the
+ * scraper workspace in the web UI, which runs a single route in-process; the
+ * CLI covers whole provinces and municipalities.
+ */
 export function resolveTargets(
     allScrapers: ScraperTarget[],
     targetArg?: string,
@@ -65,65 +31,30 @@ export function resolveTargets(
         return { targets: [], isSingle: false, scopeDesc: "No scrapers available" };
     }
 
-    if (!targetArg || targetArg.toLowerCase().trim() === "all") {
-        return {
-            targets: allScrapers,
-            isSingle: false,
-            scopeDesc: "All provinces & municipalities",
-        };
+    const match = matchTargets(targetArg);
+
+    if (match.targets.length === 0) {
+        return { targets: [], isSingle: false, scopeDesc: `No matches for '${targetArg ?? ""}'` };
     }
 
-    const clean = targetArg.toLowerCase().trim();
+    const scopeDesc =
+        match.scope === "province"
+            ? `Province '${match.requested}' (${match.targets.length} municipalities)`
+            : match.scope === "all"
+              ? "All provinces & municipalities"
+              : `Single scraper (${match.targets[0].key})`;
 
-    // 1. Check for province:municipality format
-    if (clean.includes(":")) {
-        const [prov, mun] = clean.split(":");
-        const matched = allScrapers.find(
-            (s) =>
-                s.province === prov &&
-                (s.municipality === mun || s.municipality === `${mun}-mun` || s.cleanMun === mun),
-        );
-        return {
-            targets: matched ? [matched] : [],
-            isSingle: true,
-            scopeDesc: `Single scraper (${clean})`,
-        };
-    }
-
-    // 2. Check if clean matches an entire province
-    const provinceMatches = allScrapers.filter((s) => s.province === clean);
-    if (provinceMatches.length > 0) {
-        return {
-            targets: provinceMatches,
-            isSingle: false,
-            scopeDesc: `Province '${clean}' (${provinceMatches.length} municipalities)`,
-        };
-    }
-
-    // 3. Fallback: Check if clean matches a municipality name directly
-    const munMatches = allScrapers.filter((s) => s.municipality === clean || s.cleanMun === clean);
-    if (munMatches.length === 1) {
-        return {
-            targets: munMatches,
-            isSingle: true,
-            scopeDesc: `Single scraper (${munMatches[0].displayName})`,
-        };
-    }
-    if (munMatches.length > 1) {
-        return {
-            targets: munMatches,
-            isSingle: false,
-            scopeDesc: `Matching municipalities (${munMatches.length})`,
-        };
-    }
-
-    return { targets: [], isSingle: false, scopeDesc: `No matches for '${clean}'` };
+    return {
+        targets: match.targets,
+        isSingle: match.targets.length === 1,
+        scopeDesc,
+    };
 }
 
 function executeSingle(target: ScraperTarget): Promise<number> {
-    console.log(`[Runner] Executing scraper for '${target.displayName}'...\n`);
+    console.log(`[Runner] Executing scraper for '${target.key}'...\n`);
     return new Promise((resolve) => {
-        const child = spawn("npx", ["tsx", target.path], {
+        const child = spawn("npx", ["tsx", target.indexPath], {
             stdio: "inherit",
             env: process.env,
         });
@@ -133,7 +64,7 @@ function executeSingle(target: ScraperTarget): Promise<number> {
         });
 
         child.on("error", (err) => {
-            console.error(`[Runner] Failed to start process for '${target.displayName}':`, err);
+            console.error(`[Runner] Failed to start process for '${target.key}':`, err);
             resolve(1);
         });
     });
@@ -158,13 +89,13 @@ async function executeParallel(
         while (currentIndex < targets.length) {
             const index = currentIndex++;
             const target = targets[index];
-            const prefix = `[${target.displayName}]`;
+            const prefix = `[${target.key}]`;
             const itemStartTime = Date.now();
 
-            console.log(`[Runner] [Worker ${workerId}] Starting ${target.displayName}`);
+            console.log(`[Runner] [Worker ${workerId}] Starting ${target.key}`);
 
             const result = await new Promise<ScraperResult>((resolve) => {
-                const child = spawn("npx", ["tsx", target.path], {
+                const child = spawn("npx", ["tsx", target.indexPath], {
                     stdio: ["ignore", "pipe", "pipe"],
                     env: process.env,
                 });
@@ -189,11 +120,11 @@ async function executeParallel(
                     completedCount++;
                     if (success) {
                         console.log(
-                            `[Runner] ✅ ${target.displayName} completed successfully in ${(durationMs / 1000).toFixed(1)}s (${completedCount}/${targets.length})`,
+                            `[Runner] ✅ ${target.key} completed successfully in ${(durationMs / 1000).toFixed(1)}s (${completedCount}/${targets.length})`,
                         );
                     } else {
                         console.error(
-                            `[Runner] ❌ ${target.displayName} failed with code ${code} in ${(durationMs / 1000).toFixed(1)}s (${completedCount}/${targets.length})`,
+                            `[Runner] ❌ ${target.key} failed with code ${code} in ${(durationMs / 1000).toFixed(1)}s (${completedCount}/${targets.length})`,
                         );
                     }
                     resolve({
@@ -208,7 +139,7 @@ async function executeParallel(
                     const durationMs = Date.now() - itemStartTime;
                     completedCount++;
                     console.error(
-                        `[Runner] ❌ ${target.displayName} encountered process error: ${err.message}`,
+                        `[Runner] ❌ ${target.key} encountered process error: ${err.message}`,
                     );
                     resolve({
                         target,
@@ -239,7 +170,7 @@ async function executeParallel(
         const icon = r.success ? "✅" : "❌";
         const dur = (r.durationMs / 1000).toFixed(1) + "s";
         console.log(
-            `  ${icon} ${r.target.displayName.padEnd(25)} Duration: ${dur.padStart(6)}${r.success ? "" : ` (Exit Code: ${r.exitCode})`}`,
+            `  ${icon} ${r.target.key.padEnd(25)} Duration: ${dur.padStart(6)}${r.success ? "" : ` (Exit Code: ${r.exitCode})`}`,
         );
     }
     console.log(`------------------------------------------------------------`);
@@ -268,13 +199,16 @@ function printUsageAndList(available: ScraperTarget[]) {
     console.log("Examples:");
     console.log("  npm run scraper");
     console.log("  npm run scraper lumbini");
-    console.log("  npm run scraper lumbini:banganga\n");
+    console.log("  npm run scraper lumbini:banganga");
+    console.log(
+        "\nSingle route runs (<province>:<municipality>:<route>) are done from the UI:\n  npm start  ->  http://localhost:5173/workspace\n",
+    );
 
     if (available.length > 0) {
         console.log("Available Scrapers:");
         for (const s of available) {
             console.log(
-                `  - ${s.displayName.padEnd(25)} (Path: src/scrapers/${s.province}/${s.municipality}/index.ts)`,
+                `  - ${s.key.padEnd(25)} (Path: src/scrapers/${s.province}/${s.municipality}/index.ts)`,
             );
         }
     } else {

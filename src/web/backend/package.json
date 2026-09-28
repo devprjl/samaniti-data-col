@@ -1,15 +1,18 @@
 {
-  "name": "samaniti-data-viewer-backend",
-  "version": "1.0.0",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
-  },
-  "dependencies": {
-    "@prisma/client": "^7.10.0",
-    "cors": "^2.8.5",
-    "express": "^4.18.2"
-  }
+    "name": "samaniti-data-viewer-backend",
+    "version": "1.0.0",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "tsx index.js",
+        "dev": "tsx watch index.js"
+    },
+    "dependencies": {
+        "@prisma/client": "^7.10.0",
+        "cors": "^2.8.5",
+        "express": "^4.18.2"
+    },
+    "devDependencies": {
+        "tsx": "^4.23.13"
+    }
 }

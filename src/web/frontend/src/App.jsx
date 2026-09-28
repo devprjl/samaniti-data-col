@@ -12,6 +12,7 @@ import MethodologyPage from "./pages/MethodologyPage";
 import MunicipalityPage from "./pages/MunicipalityPage";
 import OverviewPage from "./pages/OverviewPage";
 import PolicyDetailPage from "./pages/PolicyDetailPage";
+import WorkspacePage from "./pages/WorkspacePage";
 import RunDetailPage from "./pages/RunDetailPage";
 
 const emptyPortalData = {
@@ -40,6 +41,14 @@ function parseRoute(pathname) {
     if (segments[0] === "activity" && segments[1]) return { page: "run", id: segments[1] };
     if (segments[0] === "activity" && segments.length === 1) return { page: "activity" };
     if (segments[0] === "methodology" && segments.length === 1) return { page: "methodology" };
+    if (segments[0] === "workspace") {
+        return {
+            page: "workspace",
+            province: segments[1] || null,
+            municipality: segments[2] || null,
+            route: segments[3] || null,
+        };
+    }
 
     return { page: "not-found" };
 }
@@ -324,7 +333,9 @@ function App() {
             />
         );
     } else if (route.page === "methodology") {
-        page = <MethodologyPage />;
+        page = <MethodologyPage coverage={coverage} />;
+    } else if (route.page === "workspace") {
+        page = <WorkspacePage onDataChanged={loadData} policies={policies} />;
     } else {
         page = <NotFoundPage pathname={pathname} />;
     }

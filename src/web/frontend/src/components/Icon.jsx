@@ -143,6 +143,20 @@ const icons = {
         </>
     ),
     close: <path d="m6 6 12 12M18 6 6 18" />,
+    copy: (
+        <>
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+        </>
+    ),
+    play: <path d="M7 4.5v15l13-7.5-13-7.5Z" />,
+    terminal: (
+        <>
+            <rect x="3" y="4.5" width="18" height="15" rx="2" />
+            <path d="m7 10 2.5 2.5L7 15M12.5 15.5H17" />
+        </>
+    ),
+    code: <path d="m9 7-5 5 5 5M15 7l5 5-5 5" />,
     mark: (
         <>
             <path d="M12 3 20 7v10l-8 4-8-4V7l8-4Z" />

@@ -1,6 +1,7 @@
 import Link from "../components/Link";
 import Icon from "../components/Icon";
 import { PageHeader, SectionHeading } from "../components/Primitives";
+import { pluralize, seriesTone } from "../lib/format";
 
 const dataModel = [
     {
@@ -26,7 +27,7 @@ const dataModel = [
     },
 ];
 
-export default function MethodologyPage() {
+export default function MethodologyPage({ coverage = [] }) {
     return (
         <div className="page-stack">
             <PageHeader
@@ -54,28 +55,41 @@ export default function MethodologyPage() {
 
                 <section className="panel guide-scope">
                     <SectionHeading
-                        description="The portal is designed around the collection scope below."
+                        description="The provinces currently represented in the collection database."
                         eyebrow="Scope"
-                        title="Two provinces"
+                        title={
+                            coverage.length > 0
+                                ? pluralize(coverage.length, "province")
+                                : "Provincial scope"
+                        }
                     />
-                    <div className="scope-list">
-                        <div className="scope-row">
-                            <span className="scope-row-mark scope-row-madhesh" />
-                            <div>
-                                <strong>Madhesh Province</strong>
-                                <span>Local government records and source documents</span>
-                            </div>
-                            <Icon name="check" size={16} />
+                    {coverage.length > 0 ? (
+                        <div className="scope-list">
+                            {coverage.map((item, index) => (
+                                <div className="scope-row" key={item.province}>
+                                    <span
+                                        className={`scope-row-mark scope-row-mark-${seriesTone(index)}`}
+                                    />
+                                    <div>
+                                        <strong>{item.province}</strong>
+                                        <span>
+                                            {pluralize(item.municipalityCount, "local government")}{" "}
+                                            · {pluralize(item.policyCount, "policy record")}
+                                        </span>
+                                    </div>
+                                    <Icon name="check" size={16} />
+                                </div>
+                            ))}
                         </div>
-                        <div className="scope-row">
-                            <span className="scope-row-mark scope-row-lumbini" />
-                            <div>
-                                <strong>Lumbini Province</strong>
-                                <span>Local government records and source documents</span>
-                            </div>
-                            <Icon name="check" size={16} />
+                    ) : (
+                        <div className="panel-note">
+                            <Icon name="info" size={17} />
+                            <span>
+                                No provincial data is available yet. Run a scraper from the
+                                workspace to start collecting.
+                            </span>
                         </div>
-                    </div>
+                    )}
                     <Link className="text-link" to="/municipalities">
                         Open the directory <Icon name="arrow-right" size={15} />
                     </Link>

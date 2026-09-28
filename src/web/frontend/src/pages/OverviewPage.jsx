@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import Link from "../components/Link";
-import { formatNumber, pluralize } from "../lib/format";
+import { formatNumber, pluralize, seriesTone } from "../lib/format";
 import Icon from "../components/Icon";
 import { MetricBar, PageHeader, SectionHeading, StatCard } from "../components/Primitives";
 import { ActivityFeed } from "../components/RunTable";
@@ -35,7 +36,14 @@ export default function OverviewPage({
                 <div className="coverage-hero-copy">
                     <span className="section-kicker">Collection scope</span>
                     <h2>
-                        Madhesh <span>+</span> Lumbini
+                        {coverage.length > 0
+                            ? coverage.map((item, index) => (
+                                  <Fragment key={item.province}>
+                                      {index > 0 && <span> + </span>}
+                                      {item.province}
+                                  </Fragment>
+                              ))
+                            : "No data is available"}
                     </h2>
                     <p>
                         Browse the records currently available in the collection database. Every
@@ -161,7 +169,7 @@ export default function OverviewPage({
                     />
                     {coverage.length > 0 ? (
                         <div className="coverage-list">
-                            {coverage.map((item) => (
+                            {coverage.map((item, index) => (
                                 <div className="coverage-row" key={item.province}>
                                     <div className="coverage-row-heading">
                                         <div>
@@ -178,7 +186,7 @@ export default function OverviewPage({
                                     <MetricBar
                                         label="Policy records"
                                         total={policies.length}
-                                        tone={item.province === "Madhesh" ? "rose" : "green"}
+                                        tone={seriesTone(index)}
                                         value={item.policyCount}
                                     />
                                 </div>

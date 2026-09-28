@@ -1,14 +1,16 @@
 import "dotenv/config";
+import { fileURLToPath } from "node:url";
 import {
     IMunicipalityScraper,
     ScrapedPage,
     ScraperConfig,
 } from "../../../core/contracts/scraper.interface.js";
 import { EtlPayload } from "../../../core/types/domain.js";
+import { runScraperPipeline, ScraperRunSummary } from "../../../core/scraper/pipeline.js";
 import { extract, ROUTES } from "./extract.js";
 import { transform, MUNICIPALITY_CODE } from "./transform.js";
 import { load } from "./load.js";
-import { prisma, recordScraperRun } from "../../../core/db/loader.js";
+import { prisma } from "../../../core/db/loader.js";
 
 export class ManarashiswaScraper implements IMunicipalityScraper {
     public municipalityCode = MUNICIPALITY_CODE;
@@ -26,61 +28,32 @@ export class ManarashiswaScraper implements IMunicipalityScraper {
         return load(data);
     }
 
-    async run(config?: ScraperConfig): Promise<void> {
-        console.log(`[ManarashiswaScraper] Starting ETL run for '${this.municipalityCode}'`);
-        const startTime = Date.now();
-        let itemsAdded = 0;
-        let itemsUpdated = 0;
-        let status = "success";
-        let errorMsg: string | undefined = undefined;
-
-        try {
-            const pages = await this.extract(config);
-            console.log(
-                `[ManarashiswaScraper] Extracted ${pages.length} page(s). Processing incrementally...`,
-            );
-
-            for (const page of pages) {
-                try {
-                    const partialData = await this.transform([page]);
-                    const res = await this.load(partialData);
-                    if (res) {
-                        itemsAdded += res.itemsAdded;
-                        itemsUpdated += res.itemsUpdated;
-                    }
-                } catch (err: any) {
-                    console.error(`[ManarashiswaScraper] Error processing page ${page.url}:`, err);
-                }
-            }
-            console.log(`[ManarashiswaScraper] ETL run completed successfully.`);
-        } catch (err: any) {
-            status = "failed";
-            errorMsg = err?.message ?? String(err);
-            console.error(`[ManarashiswaScraper] ETL run failed:`, err);
-            throw err;
-        } finally {
-            const durationMs = Date.now() - startTime;
-            await recordScraperRun(this.municipalityCode, {
-                scraperName: this.municipalityCode,
-                durationMs,
-                status,
-                itemsAdded,
-                itemsUpdated,
-                error: errorMsg,
-            });
-        }
+    async run(config?: ScraperConfig): Promise<ScraperRunSummary> {
+        return runScraperPipeline(
+            {
+                label: "ManarashiswaScraper",
+                municipalityCode: this.municipalityCode,
+                routes: this.routes,
+                extract: (scraperConfig) => this.extract(scraperConfig),
+                transform: (pages) => this.transform(pages),
+                load: (data) => this.load(data),
+            },
+            config,
+        );
     }
 }
 
-// Run directly: npm run scraper lumbini:laxminiya
-(async () => {
-    const scraper = new ManarashiswaScraper();
-    try {
-        await scraper.run();
-    } catch (err) {
-        console.error("[ManarashiswaScraper] Fatal error:", err);
-        process.exit(1);
-    } finally {
-        await prisma.$disconnect();
-    }
-})();
+// Run directly: npx tsx src/scrapers/madesh/manarashiswa-mun/index.ts
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    (async () => {
+        const scraper = new ManarashiswaScraper();
+        try {
+            await scraper.run();
+        } catch (err) {
+            console.error("[ManarashiswaScraper] Fatal error:", err);
+            process.exit(1);
+        } finally {
+            await prisma.$disconnect();
+        }
+    })();
+}

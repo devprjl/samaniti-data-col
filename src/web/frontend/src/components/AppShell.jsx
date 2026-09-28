@@ -9,6 +9,7 @@ const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
+    { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 
@@ -25,6 +26,19 @@ function getBreadcrumbs(route, municipalityName) {
             return [{ label: "Collection activity" }];
         case "run":
             return [{ label: "Collection activity", to: "/activity" }, { label: "Run detail" }];
+        case "workspace":
+            return [
+                { label: "Scraper workspace" },
+                ...(route.province
+                    ? [
+                          {
+                              label: route.route
+                                  ? `${route.province}:${route.municipality}:${route.route}`
+                                  : `${route.province}:${route.municipality}`,
+                          },
+                      ]
+                    : []),
+            ];
         case "methodology":
             return [{ label: "Data guide" }];
         default:
@@ -106,18 +120,9 @@ export default function AppShell({
                 </div>
 
                 <div className="sidebar-bottom">
-                    <div className="coverage-note">
-                        <span className="coverage-note-mark">
-                            <Icon name="layers" size={16} />
-                        </span>
-                        <div>
-                            <strong>Madhesh + Lumbini</strong>
-                            <span>Provincial collection scope</span>
-                        </div>
-                    </div>
                     <div className="sidebar-meta">
                         <span>Samaniti data portal</span>
-                        <span>v1.0 · Read-only</span>
+                        <span>v1.0</span>
                     </div>
                 </div>
             </aside>

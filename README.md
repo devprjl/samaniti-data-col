@@ -1,11 +1,12 @@
 # Samaniti Data Collection & ETL Monorepo
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.19%2B-5fa04e.svg)](https://nodejs.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-7.x-2D3748.svg)](https://www.prisma.io/)
-[![Crawlee](https://img.shields.io/badge/Crawlee-3.8+-orange.svg)](https://crawlee.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![Crawlee](https://img.shields.io/badge/Crawlee-3.x-ee6420.svg)](https://crawlee.dev/)
+[![React](https://img.shields.io/badge/React-19.x-61dafb.svg)](https://react.dev/)
 
-An enterprise-grade TypeScript web scraping and ETL (Extract, Transform, Load) pipeline designed to systematically harvest, normalize, and store public policy, governance, project, report, and notice data across local government portals (municipalities and rural municipalities) in Nepal.
+A TypeScript web scraping and ETL (Extract, Transform, Load) pipeline that harvests, normalizes and stores public policy, governance, project, report and notice data from local government portals (municipalities and rural municipalities) in Nepal — together with a web application for inspecting that data and verifying individual scraper routes.
 
 ---
 
@@ -13,77 +14,121 @@ An enterprise-grade TypeScript web scraping and ETL (Extract, Transform, Load) p
 
 - [Overview & Objectives](#overview--objectives)
 - [Key Features](#key-features)
+- [Technology Stack](#technology-stack)
 - [Data Model & Schema](#data-model--schema)
 - [Supported Municipalities](#supported-municipalities)
 - [Project Architecture](#project-architecture)
 - [Prerequisites](#prerequisites)
 - [Installation & Setup](#installation--setup)
+- [npm Scripts](#npm-scripts)
 - [Running Scrapers](#running-scrapers)
+- [Pagination](#pagination)
 - [Web Dashboard](#web-dashboard)
+- [Route Verification Workspace](#route-verification-workspace)
+- [Workspace Plan & Scope](#workspace-plan--scope)
 - [Documentation & Guides](#documentation--guides)
+- [License](#license)
 
 ---
 
 ## Overview & Objectives
 
-Local government websites across Nepal (primarily built on Drupal) publish critical public information: annual budgets, municipal notices, infrastructure tenders, executive decisions, and periodic progress reports. Much of this information is shared via PDF attachments, image notices, and flipbooks.
+Local government websites across Nepal (mostly Drupal) publish budgets, notices, tenders, executive decisions and periodic progress reports, frequently as PDF attachments, image notices and flipbooks.
 
-**Samaniti Data Collection** achieves:
+This repository provides:
 
-1. **Systematic Crawling**: Reliably traversing municipal listings, pagination, and detail pages.
-2. **Unified Data Normalization**: Transforming disparate portal structures into a unified `PolicyEntity` domain model.
-3. **High-Resolution Media Extraction**: Un-styling Drupal image thumbnails to extract raw, full-resolution original images and documents as published on the portals.
-4. **Resilient Local Persistence & Telemetry**: Tracking lineage (`runId`), execution telemetry, duration, and status in PostgreSQL via Prisma.
-5. **Data Inspection Dashboard**: Providing an integrated web dashboard to review scraped policies and attachments.
+1. **Systematic crawling** — sequential, polite traversal of municipal listings, pagination and detail pages.
+2. **A unified data model** — disparate portal structures normalized into one `PolicyEntity` model.
+3. **Full-resolution media recovery** — Drupal derivative URLs (`/files/styles/thumbnail/…`) resolved back to original assets.
+4. **Local persistence & telemetry** — Prisma/PostgreSQL upserts plus a `ScraperRun` audit record per execution.
+5. **An inspection and verification web app** — browse collected records, and run or re-run a single route without leaving the browser.
 
 ---
 
 ## Key Features
 
-- **Automated Discovery & Crawling**: Built on [Crawlee](https://crawlee.dev/) with polite throttling, sequential request handling, and robust DOM scoping.
-- **Unified Policy Architecture**: Consolidates notices, projects, reports, budgets, and tender data into a clean, searchable schema with province/municipality relationships.
-- **Full-Resolution Image & Document Resolution**:
-    - Automatically converts Drupal derivative URLs (e.g. `/files/styles/thumbnail/public/...`) back to uncompressed original source files.
-    - Strips derivative tokens (`?itok=...`) and decodes human-readable file names from URL paths.
-    - Extracts embedded DFlip flipbook PDFs and attached documents.
-- **Telemetry & Batch Lineage**: Every scraper execution registers a `ScraperRun` record tracking duration, items added, items updated, and error stack traces.
-- **Interactive Multi-Target CLI Runner**: Dynamic interactive menu (`npm run scraper`) allowing scraping by single municipality, entire province, or all targets concurrently.
-- **Inspection Web Dashboard**: Full-stack application (`src/web/`) with Express REST API and React/Vite UI for real-time data browsing, filtering, and document downloads.
+- **Automated discovery & crawling** — [Crawlee](https://crawlee.dev/) `CheerioCrawler`, sequential request handling, polite throttling, DOM scoping.
+- **Unified policy architecture** — notices, projects, reports, budgets and tenders in one searchable schema with province/municipality relations.
+- **Full-resolution image & document resolution** — un-styling, `?itok=` stripping, human-readable filename decoding, embedded DFlip flipbook extraction.
+- **Telemetry & batch lineage** — every execution writes a `ScraperRun` with duration, items added/updated and errors.
+- **One execution path** — the CLI runner and the web workspace both call each scraper's `run()`, so a route verified in the browser behaves exactly like the same route run from a terminal.
+- **Route-level targeting** — run a single route with the key `<province>:<municipality>:<route>`, or a whole municipality, from either the CLI or the web UI.
+- **Configuration inspector** — route configurations are read directly out of each `extract.ts` and displayed in the UI; nothing is duplicated into the database.
+- **Live run output** — the scraper's own console output is mirrored into the browser while a run is in progress.
+- **Environment-driven pagination** — listing pagination is one variable (`SCRAPER_PAGINATION`) instead of a per-route flag, overridable per run.
+
+---
+
+## Technology Stack
+
+| Layer            | Technology                            | Version        |
+| :--------------- | :------------------------------------ | :------------- |
+| Runtime          | Node.js                               | `>=22.19`      |
+| Language         | TypeScript                            | `5.x`          |
+| Module execution | tsx                                   | `4.x`          |
+| Crawling         | Crawlee (`CheerioCrawler`)            | `3.x`          |
+| HTML parsing     | Cheerio                               | `1.0.0-rc.12`  |
+| HTTP client      | undici                                | `8.x`          |
+| ORM / database   | Prisma ORM + PostgreSQL (`pg` driver) | `7.x`          |
+| API              | Express + cors                        | `4.x`          |
+| UI               | React + Vite                          | `19.x` / `8.x` |
+| Frontend lint    | oxlint                                | `1.x`          |
+| Formatting       | Prettier                              | `3.x`          |
+
+Node `>=22.19` is required because `undici@8` declares `engines.node >= 22.19.0`. See [docs/project-structure.md](docs/project-structure.md) for the full breakdown, including every package's declared version and its role.
 
 ---
 
 ## Data Model & Schema
 
-The data layer uses PostgreSQL managed via [Prisma](https://www.prisma.io/):
+The data layer is PostgreSQL via [Prisma](https://www.prisma.io/):
 
-- **`Municipality`**: Primary administrative unit (`code`, `nameNe`, `nameEn`, `province`, `district`).
-- **`MunicipalityProfile`**: Demographic and institutional metadata (established BS, wards, population, area, contact info).
-- **`PolicyEntity`**: Unified collection of public municipal items:
-    - `category`: `"notice"`, `"project"`, `"report"`, etc.
+- **`Municipality`** — `code` (unique), `nameNe`, `nameEn`, `province`, `district`.
+- **`MunicipalityProfile`** — established (B.S.), wards, population, area, contact details.
+- **`PolicyEntity`** — the unified collection of public items:
+    - `category`: `"notice"`, `"project"`, `"report"`, …
     - `titleNe` / `titleEn`, `contentNe` / `contentEn`
     - `fiscalYear`, `budgetAmount`, `status`, `wardNo`, `publishedDate`
-    - `sourceUrl` (Unique constraint for deduplication)
-    - `metadata`: Flexible JSON column for portal-specific attributes.
-- **`Document`**: Media attachments and files associated with a `PolicyEntity`:
-    - `fileName`, `fileType`, `originalUrl` (unique canonical URL).
-    - `storagePath`, `downloadStatus` (`"pending"`, `"ok"`, `"failed"`, `"skipped"`).
-    - `ocrData`: Text storage field on the document record.
-- **`ScraperRun`**: Audit logs capturing execution metrics, status (`"success"`, `"failed"`), duration, and error logs.
+    - `sourceUrl` (unique — the deduplication key)
+    - `metadata` (JSON) for portal-specific attributes
+- **`Document`** — `fileName`, `fileType`, `originalUrl` (unique), `storagePath`, `downloadStatus` (`pending` / `ok` / `failed` / `skipped`), `downloadError`, `ocrData`.
+- **`ScraperRun`** — per-execution telemetry: status, duration, items added/updated, error.
+
+A route's records are identified by `PolicyEntity.type`, which holds the route's slug — the same string used in the structured run key. That is what lets a single key address both a run and its records.
 
 ---
 
 ## Supported Municipalities
 
-Currently active scrapers in Lumbini Province (`src/scrapers/lumbini/`):
+13 scrapers across two provinces, 156 route configurations (155 distinct route names). Scrapers are discovered from disk, so the counts below reflect the `ROUTES` arrays in the code.
 
-| Municipality                       | Code              | Type               | Portal Base URL                 |
-| :--------------------------------- | :---------------- | :----------------- | :------------------------------ |
-| **Banganga Municipality**          | `banganga-mun`    | Municipality       | `https://bangangamun.gov.np`    |
-| **Bardaghat Municipality**         | `bardaghat-mun`   | Municipality       | `https://bardaghatmun.gov.np`   |
-| **Kanchan Rural Municipality**     | `kanchan-mun`     | Rural Municipality | `https://kanchanmun.gov.np`     |
-| **Sainamaina Municipality**        | `sainamaina-mun`  | Municipality       | `https://sainamainamun.gov.np`  |
-| **Sarawal Rural Municipality**     | `sarawal-mun`     | Rural Municipality | `https://sarawalmun.gov.np`     |
-| **Shuddhodhan Rural Municipality** | `shuddhodhan-mun` | Rural Municipality | `https://shuddhodhanmun.gov.np` |
+### Lumbini Province
+
+| Municipality                      | Folder            | Code         | District    | Routes | Portal                                   |
+| :-------------------------------- | :---------------- | :----------- | :---------- | -----: | :--------------------------------------- |
+| **Banganga Municipality**         | `banganga-mun`    | `BANGANGA`   | Kapilvastu  |      6 | `https://bangangamun.gov.np`             |
+| **Bardaghat Municipality**        | `bardaghat-mun`   | `BARDAGHAT`  | Nawalparasi |     13 | `https://bardaghatmun.gov.np`            |
+| **Kanchan Rural Municipality**    | `kanchan-mun`     | `KANCHAN`    | Rupandehi   |     14 | `https://kanchanmun.gov.np`              |
+| **Sainamaina Municipality**       | `sainamaina-mun`  | `SAINAMAINA` | Rupandehi   |     17 | `https://sainamainamun.gov.np`           |
+| **Sarawal Rural Municipality**    | `sarawal-mun`     | `SARAWAL`    | Nawalparasi |     18 | `https://sarawalmun.gov.np`              |
+| **Suddhodhan Rural Municipality** | `shuddhodhan-mun` | `SUDDHODHAN` | Rupandehi   |     13 | `https://shuddhodhanmunrupandehi.gov.np` |
+
+### Madhesh Province
+
+| Municipality                         | Folder                | Code               | District  | Routes | Portal                              |
+| :----------------------------------- | :-------------------- | :----------------- | :-------- | -----: | :---------------------------------- |
+| **Durgabhagwati Rural Municipality** | `durgabhagwati-mun`   | `DURGABHAGWATI`    | Rautahat  |     11 | `https://durgabhagawatimun.gov.np`  |
+| **Dhankaul Rural Municipality**      | `dhankaul-mun`        | `DHANKAUL`         | Sarlahi   |     11 | `https://dhankaulmun.gov.np`        |
+| **Ekdara Rural Municipality**        | `ekdara-mun`          | `EKDARA`           | Mahottari |     11 | `https://ekdaramun.gov.np`          |
+| **Hariwon Municipality**             | `harion-mun`          | `HARIWON`          | Sarlahi   |      9 | `https://harionmun.gov.np`          |
+| **Kshireshwarnath Municipality**     | `kshireshwarnath-mun` | `KSHIRESHWARANATH` | Dhanusha  |     11 | `https://kshireshwornathmun.gov.np` |
+| **Lakshminiya Rural Municipality**   | `laxminiya-mun`       | `LAKSHMINIYA`      | Dhanusha  |      9 | `https://laxminiyamun.gov.np`       |
+| **Manara Shiswa Municipality**       | `manarashiswa-mun`    | `MANARASHISWA`     | Mahottari |     13 | `https://manarashiswamun.gov.np`    |
+
+Notes for anyone adding a scraper:
+
+- The folder name does **not** have to match the database code — `harion-mun` holds `HARIWON`, `laxminiya-mun` holds `LAKSHMINIYA`, `shuddhodhan-mun` holds `SUDDHODHAN`. The workspace resolves scraper → database row through `MUNICIPALITY_CODE` in `transform.ts`, never through the folder name.
+- A route may legitimately be declared more than once in one `extract.ts` — Dhankaul's `publications` currently is, with a second configuration for the same listing. The workspace groups every configuration under one route name and runs all of them together.
 
 ---
 
@@ -91,132 +136,274 @@ Currently active scrapers in Lumbini Province (`src/scrapers/lumbini/`):
 
 ```tree
 samaniti-data-col/
-├── docs/                      # Architecture & ETL guides
-│   ├── project-structure.md   # Codebase module layout
-│   └── etl-pipeline-guide.md  # Step-by-step ETL workflow
+├── docs/
+│   ├── project-structure.md   # Layout, module responsibilities, technology versions
+│   └── etl-pipeline-guide.md  # Step-by-step ETL lifecycle
 ├── prisma/
-│   ├── schema.prisma          # Database schema (Municipalities, Policies, Documents, Runs)
-│   └── migrations/            # Migration history
+│   ├── schema.prisma          # Municipality, Profile, PolicyEntity, Document, ScraperRun
+│   └── migrations/            # SQL migration history
+├── scripts/
+│   └── reset-db.ts            # Destructive local database reset helper
 ├── src/
-│   ├── core/                  # Core shared framework
-│   │   ├── constants/         # MIME types and route constants
-│   │   ├── contracts/         # Scraper interfaces and route contracts
-│   │   ├── db/                # Database loader & ScraperRun telemetry
-│   │   ├── scraper/           # Crawlee CheerioCrawler engine
-│   │   ├── types/             # Domain TypeScript interfaces
-│   │   └── utils/             # HTML parsing, Nepali date parsing, un-styling, downloads
-│   ├── scrapers/              # Province-organized municipality scrapers
-│   │   └── lumbini/           # Lumbini Province scrapers
-│   └── web/                   # Integrated Inspection UI
-│       ├── backend/           # Express REST API (serves data and downloads)
+│   ├── core/                  # Shared framework
+│   │   ├── constants/         # MIME maps, transformer constants
+│   │   ├── contracts/         # RouteConfig, ScraperConfig, IMunicipalityScraper
+│   │   ├── db/                # Prisma loader + ScraperRun telemetry
+│   │   ├── scraper/           # crawler, pipeline, registry, route-selection, settings
+│   │   ├── types/             # Domain interfaces
+│   │   └── utils/             # HTML, documents, files, Nepali dates, URLs, pagination
+│   ├── scrapers/
+│   │   ├── lumbini/           # 6 municipality scrapers
+│   │   └── madesh/            # 7 municipality scrapers
+│   └── web/                   # Inspection + verification application
+│       ├── backend/           # Express API (data, downloads)
+│       │   └── workspace/     # Route config API, one-click route execution, run log
 │       └── frontend/          # React + Vite dashboard
-├── runner.ts                  # Dynamic interactive CLI scraper runner
-└── storage/                   # Local storage for downloaded document attachments
+├── runner.ts                  # CLI scraper orchestrator
+└── storage/                   # Downloaded attachments + Crawlee run state (gitignored)
 ```
 
 ---
 
 ## Prerequisites
 
-- **Node.js**: `v18.x` or higher
-- **PostgreSQL**: Running PostgreSQL database instance
-- **npm**: `v9.x` or higher
+- **Node.js `>=22.19.0`** — required by `undici@8`; Vite 8 and Prisma 7 also need `^20.19` or newer.
+- **npm `>=10`** — the repository uses npm workspaces.
+- **PostgreSQL** — a reachable instance with a database for `DATABASE_URL`.
 
 ---
 
 ## Installation & Setup
 
-1. **Clone the repository**:
+1. **Clone and install**:
 
     ```bash
     git clone https://github.com/itzzsauravp/samaniti-data-col.git
     cd samaniti-data-col
-    ```
-
-2. **Install all dependencies** (monorepo root and web workspaces):
-
-    ```bash
     npm install
     ```
 
-3. **Configure Environment Variables**:
-   Create a `.env` file in the project root:
+    `npm install` covers the root and both `src/web/*` workspaces.
+
+2. **Configure the environment**:
 
     ```bash
     cp .env.example .env
     ```
 
-    Ensure your `.env` contains:
-
     ```env
-    DATABASE_URL="postgresql://user:password@localhost:5432/samaniti_db?schema=public"
-    SKIP_FILE_DOWNLOADS=true  # Set to false to download attachments locally to storage/
+    DATABASE_URL='postgresql://user:password@localhost:5432/samaniti_db?schema=public'
+    SKIP_FILE_DOWNLOADS=true     # false to download attachments into storage/
+    FILE_DOWNLOAD_TIMEOUT_MS=60000
+    SCRAPER_PAGINATION=false     # true to walk past the first listing page
     ```
 
-4. **Initialize the Database**:
+3. **Generate the Prisma client** (always required):
+
     ```bash
-    npm run db:push
     npm run db:generate
     ```
+
+4. **Provide the data**:
+
+    - **Existing database** (dump supplied to you): restore it, set `DATABASE_URL`, and skip the next step.
+    - **Empty database**: create the schema with `npm run db:push`.
+
+    > `npm run db:reset` **drops and recreates** the database. Never run it against a database you intend to keep.
+
+5. **Start the application**:
+
+    ```bash
+    npm start
+    ```
+
+    The API listens on `http://localhost:5001` and the UI on `http://localhost:5173`.
+
+---
+
+## npm Scripts
+
+| Script                       | Purpose                                                |
+| :--------------------------- | :----------------------------------------------------- |
+| `npm start`                  | Backend + frontend together (`concurrently`)           |
+| `npm run build`              | `tsc` type-check/emit + production frontend build      |
+| `npm run scraper`            | Interactive CLI scraper runner                         |
+| `npm run web:backend:dev`    | API only, with watch mode (runs through `tsx`)         |
+| `npm run web:frontend:dev`   | Vite dev server only                                   |
+| `npm run web:frontend:build` | Production frontend build into `src/web/frontend/dist` |
+| `npm run db:generate`        | Regenerate the Prisma client                           |
+| `npm run db:push`            | Apply `schema.prisma` to the database                  |
+| `npm run db:reset`           | **Destructive** reset for local development            |
+| `npm run lint` / `lint:fix`  | ESLint over the TypeScript sources                     |
+| `npm run format`             | Prettier write                                         |
+| `npm run format:check`       | Prettier verification                                  |
+
+The frontend has its own `oxlint` run (`npm run lint --workspace=src/web/frontend`).
 
 ---
 
 ## Running Scrapers
 
-Launch the dynamic CLI runner:
+The CLI runner discovers scrapers from disk and offers an interactive menu:
 
 ```bash
 npm run scraper
 ```
 
-The runner provides an interactive menu:
-
-- Run all scrapers sequentially.
-- Run scrapers for an entire province (e.g. `lumbini`).
-- Select specific municipalities (e.g. `bardaghat-mun`, `banganga-mun`).
-
-### Command Line Flags:
+Targets can also be passed directly:
 
 ```bash
-# Run specific municipality directly
-npx tsx runner.ts lumbini:bardaghat-mun
-
-# Run all municipalities in Lumbini province
-npx tsx runner.ts lumbini:*
-
-# Run all available scrapers
-npx tsx runner.ts all
+npx tsx runner.ts                      # all provinces, in parallel
+npx tsx runner.ts lumbini              # one province, in parallel
+npx tsx runner.ts lumbini:banganga     # one municipality
+npx tsx runner.ts all                  # everything
 ```
+
+Municipality names are matched case-insensitively and with or without the `-mun` suffix.
+
+`runner.ts` delegates discovery to `src/core/scraper/registry.ts`, the same module the web API uses, so the CLI and the UI can never disagree about which scrapers exist.
+
+### Single routes
+
+A single route is addressed by its structured key:
+
+```text
+<province>:<municipality>:<route-name>      e.g. lumbini:sainamaina:budget-program
+```
+
+The route name is the slug of the route's listing URL (`/ne/budget-program` → `budget-program`) and is matched leniently: `budget-program`, `budget_program` and the full listing URL all resolve to the same route. Running a route executes **every** configuration declared for that name.
+
+Route-level runs are started from the [workspace](#route-verification-workspace) in the web UI; the CLI covers whole provinces and municipalities.
+
+---
+
+## Pagination
+
+Pagination is not a per-route setting. It is resolved for each run, in order:
+
+1. `ScraperConfig.pagination` — an explicit per-run override (the workspace sets this).
+2. `SCRAPER_PAGINATION` — the environment variable (`true` / `false`).
+3. Default: `false` — only the first listing page is collected.
+
+For portals that do not paginate, the first page is already the complete content, so the default is safe everywhere. Set `SCRAPER_PAGINATION=true` for a full sweep, or override it per run from the workspace without changing `.env`.
 
 ---
 
 ## Web Dashboard
 
-The repository includes a companion web application to inspect and verify scraped data:
-
 ```bash
-# Start both backend and frontend concurrently:
-npm start
-
-# Or start individually:
-npm run web:backend:dev    # API runs on http://localhost:5001
-npm run web:frontend:dev   # Vite UI runs on http://localhost:5173
+npm start                      # both
+npm run web:backend:dev        # API only  → http://localhost:5001
+npm run web:frontend:dev       # UI only   → http://localhost:5173
 ```
 
-Features:
+Public-facing pages:
 
-- Filter policy records by municipality, category (`notice`, `project`, `report`), and fiscal year.
-- View document attachments, resolution status, and download links.
-- Review scraper run telemetry and audit trails.
+- **Overview** — collection coverage by province, category mix, document totals.
+- **Local governments** — directory, per-municipality profiles, policy tables, collection history.
+- **Policy records** — filters by category and fiscal year, document attachments and source links.
+- **Collection activity** — `ScraperRun` telemetry and audit trail.
+- **Data guide** — schema and methodology reference.
+
+The dashboard is read-only. The workspace below is the only part that can start work.
+
+---
+
+## Route Verification Workspace
+
+`http://localhost:5173/workspace` is a self-contained area for checking one route end to end, entirely from the browser.
+
+**What it does**
+
+| Capability              | Behaviour                                                                                                                                                                                                                                                                                   |
+| :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Configuration inspector | Lists every route of a municipality exactly as declared in its `extract.ts` — listing URL, entity type, detail type, and the `contentSelector` / `detailSelector` / `detailContentSelector` values. Each value is individually copyable, and the whole configuration can be copied as JSON. |
+| One-click execution     | Starts a run for the selected route — or for every route of the municipality — in the API process, through the same `run()` entry point the CLI uses.                                                                                                                                       |
+| Live run output         | The scraper's console output is mirrored into the page while the run progresses, with pages processed, records added/updated, and total duration.                                                                                                                                           |
+| Record verification     | Lists the records that belong to the selected route, each linking to the live portal page for comparison.                                                                                                                                                                                   |
+| Pagination control      | Choose per run whether to stay on the first listing page or walk all of them, without editing `.env`.                                                                                                                                                                                       |
+| Status indicators       | A per-route dot reflects the outcome of the most recent run for that route.                                                                                                                                                                                                                 |
+
+**How a route maps to its records**
+
+A record belongs to a route when either condition holds:
+
+- its `type` equals the route's slug (the normal case), or
+- its `sourceUrl` sits under the route's listing URL — needed because some portals label records with the linked document's title instead of the route.
+
+**Data flow**
+
+```text
+browser ──POST /api/workspace/runs──▶ registry resolves the key
+                                        │  import index.ts → scraper class
+                                        ▼
+                                   runScraperPipeline
+                                        │  console.log mirrored into the in-memory job
+                                        ▼
+browser ◀──GET /api/workspace/runs/:id── polled every 1.5 s until the run ends
+```
+
+Runs execute in-process; a run started from the browser is visible in the server's terminal at the same time. One run uses the pipeline at a time, because the output capture is process-wide.
+
+**API**
+
+| Method | Path                      | Purpose                                                                             |
+| :----- | :------------------------ | :---------------------------------------------------------------------------------- |
+| `GET`  | `/api/workspace/routes`   | Targets, route configurations, pagination setting, recent runs, any run in progress |
+| `POST` | `/api/workspace/runs`     | Start a run for `<province>:<municipality>[:<route>]`                               |
+| `GET`  | `/api/workspace/runs`     | Recent runs from this server session                                                |
+| `GET`  | `/api/workspace/runs/:id` | One run with its full log                                                           |
+
+Route configurations are re-read from the repository on every request, so the workspace always reflects the current `extract.ts` files without a server restart.
+
+---
+
+## Workspace Plan & Scope
+
+The workspace was built around an explicit set of boundaries.
+
+### Deliberately out of scope
+
+- **No selector management in the database.** CSS/XPath selectors live in `extract.ts` and are read from disk at request time. There is no table, no cache table and no API to edit them.
+- **No report tables in the database.** Verification findings are recorded outside the service (team spreadsheet). The only writes are the existing `ScraperRun` telemetry rows.
+
+Both decisions keep the working copy of the scrapers in one place — the repository — and mean a supplied database dump stays valid with no migrations.
+
+### Delivered
+
+| Item                                                           | Status   |
+| :------------------------------------------------------------- | :------- |
+| Route targeting via `<province>:<municipality>:<route>`        | Complete |
+| In-process execution from the UI, sharing the CLI code path    | Complete |
+| Configuration inspector sourced from `extract.ts`              | Complete |
+| Per-route record listing with live-portal links                | Complete |
+| Live run output in the browser                                 | Complete |
+| `SCRAPER_PAGINATION` with per-run override                     | Complete |
+| `paginated` removed from `RouteConfig` and all 13 `extract.ts` | Complete |
+| Single-execution guard with a clear message                    | Complete |
+| Re-attachment to a run after a page reload                     | Complete |
+
+### Known limitations
+
+- **Polling, not streaming.** Run output refreshes every 1.5 s rather than instantly. Moving to Server-Sent Events would touch only `workspace/router.js` and one `useEffect` in `WorkspacePage.jsx`.
+- **Run history is in memory.** `job-store.js` keeps the 25 most recent runs of the current server process; durable history is the `scraper_runs` table.
+- **One run at a time.** Enforced because the console capture used for the live log is process-wide.
+- **Only routes are targetable.** Province-wide and all-municipality runs remain CLI-only, so a stray click cannot start a multi-hour sweep.
+- **No scheduling.** Runs are manual; there is no queue, retry policy or cron entry point.
+- **Document downloads are not forced.** A run re-downloads attachments only when `SKIP_FILE_DOWNLOADS=false`; otherwise records are created with `downloadStatus: "skipped"`.
+
+### Possible next steps
+
+1. Server-Sent Events for live run output.
+2. A diff view comparing a route's records against the previous collection, to make regressions obvious.
+3. Exporting a route's collected records for external review.
 
 ---
 
 ## Documentation & Guides
 
-For deep dives into the pipeline mechanics and directory organization:
-
-- [Project Structure & Architecture Guide](docs/project-structure.md)
-- [Comprehensive ETL Pipeline Guide](docs/etl-pipeline-guide.md)
+- [Project Structure & Architecture Guide](docs/project-structure.md) — directory layout, module responsibilities, and the technologies and versions in use.
+- [Comprehensive ETL Pipeline Guide](docs/etl-pipeline-guide.md) — the extract → transform → load lifecycle, route selection, and pagination behaviour.
 
 ---
 

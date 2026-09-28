@@ -11,6 +11,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
 
+// Imported after the environment is loaded: the workspace router pulls in the scraper
+// pipeline, which opens its own Prisma client on import.
+const { createWorkspaceRouter } = await import("./workspace/router.js");
+
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
 const prisma = new PrismaClient({ adapter });
@@ -187,6 +191,9 @@ app.get(
 app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
 });
+
+// Scraper workspace: route configuration inspector and one-click route execution.
+app.use("/api/workspace", createWorkspaceRouter(prisma));
 
 app.use((error, _req, res, _next) => {
     console.error(error);
