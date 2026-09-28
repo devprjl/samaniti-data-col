@@ -10,6 +10,7 @@
     ],
     "scripts": {
         "build": "tsc && npm --workspace=src/web/frontend run build",
+        "postinstall": "prisma generate",
         "start": "concurrently \"npm run web:backend:dev\" \"npm run web:frontend:dev\"",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
@@ -19,6 +20,8 @@
         "web:backend:start": "npm --workspace=src/web/backend start",
         "web:frontend:dev": "npm --workspace=src/web/frontend run dev",
         "web:frontend:build": "npm --workspace=src/web/frontend run build",
+        "vercel-build": "npm run web:frontend:build",
+        "verify": "npm run lint && tsc --noEmit",
         "prepare": "husky",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
