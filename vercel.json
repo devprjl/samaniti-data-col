@@ -3,11 +3,6 @@
     "installCommand": "npm ci",
     "buildCommand": "npm run vercel-build",
     "outputDirectory": "src/web/frontend/dist",
-    "functions": {
-        "api/[...path].js": {
-            "includeFiles": ["node_modules/.prisma/**"]
-        }
-    },
     "rewrites": [
         {
             "source": "/((?!api/|assets/|favicon|icons|robots).*)",

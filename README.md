@@ -228,6 +228,18 @@ The portal and the API deploy as one read-only Vercel project. `vercel.json` run
 `outputDirectory`). `api/[...path].js` hands the Express app to the runtime, and
 every `/api/*` path except unknown ones falls through to the SPA shell.
 
+There is deliberately no `functions` block in `vercel.json`. An earlier one
+carried `includeFiles: ["node_modules/.prisma/**"]` on the theory that Vercel's
+file tracer skips dot-prefixed directories and would ship the function without
+the generated Prisma client. It does not skip them. Tracing `api/[...path].js`
+with Vercel's own tracer resolves all five `node_modules/.prisma/client` files —
+`default.js`, `index.js`, `package.json`, `query_compiler_fast_bg.js` and
+`query_compiler_fast_bg.wasm-base64.js` — through the static requires in
+`@prisma/client/default.js`, and it follows the entrypoint's dynamic import of
+the bundle too. The entrypoint was never the problem. Note also that the schema
+types `includeFiles` as a single glob string, so an array there fails validation
+on every deploy.
+
 ### Environment variables
 
 Two, on the project:
