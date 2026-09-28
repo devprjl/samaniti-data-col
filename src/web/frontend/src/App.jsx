@@ -333,7 +333,7 @@ function App() {
             />
         );
     } else if (route.page === "methodology") {
-        page = <MethodologyPage />;
+        page = <MethodologyPage coverage={coverage} />;
     } else if (route.page === "workspace") {
         page = <WorkspacePage onDataChanged={loadData} policies={policies} />;
     } else {

@@ -6,12 +6,6 @@ import Icon from "../components/Icon";
 import MunicipalityCard from "../components/MunicipalityCard";
 import { EmptyState, PageHeader, SearchField, SelectField } from "../components/Primitives";
 
-const provinceOptions = [
-    { value: "all", label: "All provinces" },
-    { value: "Madhesh", label: "Madhesh" },
-    { value: "Lumbini", label: "Lumbini" },
-];
-
 export default function DirectoryPage({ municipalities, policies, directory }) {
     const { search, navigate } = useRouter();
     const query = new URLSearchParams(search);
@@ -19,6 +13,19 @@ export default function DirectoryPage({ municipalities, policies, directory }) {
     const queryProvince = query.get("province") || "all";
     const sortValue = query.get("sort") || "name";
     const [searchValue, setSearchValue] = useState(querySearch);
+
+    // Built from the municipalities in the database, so the filter never offers a
+    // province the portal has no records for.
+    const provinceOptions = useMemo(
+        () => [
+            { value: "all", label: "All provinces" },
+            ...[...new Set(municipalities.map((municipality) => municipality.province))]
+                .filter(Boolean)
+                .sort((first, second) => first.localeCompare(second))
+                .map((province) => ({ value: province, label: province })),
+        ],
+        [municipalities],
+    );
 
     const policyMatches = useMemo(() => {
         const normalized = querySearch.trim().toLowerCase();
@@ -35,11 +42,17 @@ export default function DirectoryPage({ municipalities, policies, directory }) {
         return matchingIds;
     }, [policies, querySearch]);
 
+    // A bookmarked `?province=` for a province that is not in the database would
+    // otherwise silently filter everything away.
+    const activeProvince = provinceOptions.some((option) => option.value === queryProvince)
+        ? queryProvince
+        : "all";
+
     const filteredDirectory = useMemo(() => {
         const normalized = querySearch.trim().toLowerCase();
         const filtered = directory.filter(({ municipality }) => {
             const matchesProvince =
-                queryProvince === "all" || municipality.province === queryProvince;
+                activeProvince === "all" || municipality.province === activeProvince;
             const matchesMetadata =
                 !normalized ||
                 [
@@ -71,7 +84,7 @@ export default function DirectoryPage({ municipalities, policies, directory }) {
                 getMunicipalityName(second.municipality),
             );
         });
-    }, [directory, policyMatches, queryProvince, querySearch, sortValue]);
+    }, [directory, policyMatches, activeProvince, querySearch, sortValue]);
 
     function updateQuery(key, value) {
         const next = new URLSearchParams(search);
@@ -129,7 +142,7 @@ export default function DirectoryPage({ municipalities, policies, directory }) {
                         name="province-filter"
                         onChange={(event) => updateQuery("province", event.target.value)}
                         options={provinceOptions}
-                        value={queryProvince}
+                        value={activeProvince}
                     />
                     <SelectField
                         label="Sort directory"
@@ -151,7 +164,7 @@ export default function DirectoryPage({ municipalities, policies, directory }) {
                         ? `Showing ${pluralize(filteredDirectory.length, "local government")}`
                         : `${formatNumber(filteredDirectory.length)} matching ${filteredDirectory.length === 1 ? "government" : "governments"}`}
                 </span>
-                {(querySearch || queryProvince !== "all" || sortValue !== "name") && (
+                {(querySearch || activeProvince !== "all" || sortValue !== "name") && (
                     <Link className="text-link text-link-muted" to="/municipalities">
                         Clear filters <Icon name="close" size={14} />
                     </Link>

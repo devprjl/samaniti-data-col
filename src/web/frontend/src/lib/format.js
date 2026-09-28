@@ -116,3 +116,16 @@ export function getInitials(name) {
 export function pluralize(count, singular, plural = `${singular}s`) {
     return `${formatNumber(count)} ${count === 1 ? singular : plural}`;
 }
+
+/**
+ * Colours cycled through when a series is driven by data rather than by a fixed
+ * list — the provinces held in the database, for instance. Assigning them by
+ * position keeps the chart readable without naming any of them in the UI.
+ */
+const SERIES_TONES = ["green", "blue", "amber", "violet", "rose"];
+
+export function seriesTone(index) {
+    return SERIES_TONES[
+        ((index % SERIES_TONES.length) + SERIES_TONES.length) % SERIES_TONES.length
+    ];
+}
