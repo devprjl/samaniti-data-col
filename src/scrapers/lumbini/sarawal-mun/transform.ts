@@ -10,7 +10,6 @@ import {
     parseNepaliFiscalYear,
     extractTitle,
     extractDocumentLinks,
-    buildDocument,
     extractDate,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
@@ -54,16 +53,6 @@ async function transformProjectRow(
 
     const createdTd = row.find(".views-field-created");
     const dateCreated = createdTd.text().trim() || null;
-    const rawFiscalYearHref = fiscalYearAnchor.attr("href") || "";
-
-    let fiscalYearUrl: string | null = null;
-    if (rawFiscalYearHref) {
-        try {
-            fiscalYearUrl = new URL(rawFiscalYearHref, baseUrl).href;
-        } catch {
-            fiscalYearUrl = rawFiscalYearHref;
-        }
-    }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
@@ -161,6 +150,7 @@ async function transformNoticeRow(
         titleNe,
         titleEn: null,
         type: category || null,
+        fiscalYear,
         sourceUrl,
         documents,
         publishedDate: dateCreated,

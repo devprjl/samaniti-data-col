@@ -29,17 +29,6 @@ export interface FileMetadata {
 }
 
 /**
- * Sanitizes a string to make it safe for file systems.
- * Replaces spaces with underscores and removes special characters.
- */
-function sanitizeFileName(name: string): string {
-    return name
-        .replace(/[\/\\?%*:|"<>]/g, "") // Remove illegal file characters
-        .replace(/\s+/g, "_") // Replace spaces with underscores
-        .substring(0, 100); // Truncate to avoid overly long filenames
-}
-
-/**
  * Downloads a file from a URL and saves it to the structured folder path:
  * storage/province/municipality/rootFolder/typeFolder/timestamp.ext
  *
