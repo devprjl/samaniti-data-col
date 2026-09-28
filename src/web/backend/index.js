@@ -17,17 +17,20 @@ dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
  *
  * Running a scrape is not a read operation: it spawns crawlers against live
  * government portals from this host's IP address, and the CLI will run one worker
- * per CPU core. A publicly deployed instance must never expose it, so production is
- * a hard off switch that no other setting can undo.
+ * per CPU core. A publicly deployed instance must never expose it.
  *
- * The ordering matters. An earlier version treated SCRAPER_WORKSPACE_ENABLED=true as
- * an opt-in that overrode NODE_ENV, which meant a deployment that shipped a .env
- * file — the repo's own .env.example sets that variable — served the run endpoint
- * even with NODE_ENV=production. Being able to reach it has to be impossible by
- * accident, so production always wins and the variable only turns it off elsewhere.
+ * So this is strictly opt-in, and production is a second, independent barrier.
+ * Anything that is not an explicit SCRAPER_WORKSPACE_ENABLED=true leaves the run
+ * endpoint unmounted, which is the state a deployment that configures nothing ends
+ * up in. A deployment that also reports NODE_ENV=production cannot be talked out of
+ * it even if a .env carrying the opt-in is shipped alongside.
+ *
+ * Both conditions are needed. Opt-in alone is undone by a .env that leaks into a
+ * build; NODE_ENV alone is undone by a host that does not set one. Two independent
+ * barriers, and neither is load-bearing on its own.
  */
 const scraperWorkspaceEnabled =
-    process.env.NODE_ENV !== "production" && process.env.SCRAPER_WORKSPACE_ENABLED !== "false";
+    process.env.SCRAPER_WORKSPACE_ENABLED === "true" && process.env.NODE_ENV !== "production";
 
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
