@@ -94,13 +94,6 @@ export const ROUTES: RouteConfig[] = [
     //     detailType: "report",
     // },
     {
-        type: "report",
-        live: `${BASE_URL}/publications`,
-        baseUrl: BASE_URL,
-        contentSelector: ".container .row .region-content",
-        detailType: "report",
-    },
-    {
         type: "notice",
         live: `${BASE_URL}/news-notices`,
         baseUrl: BASE_URL,

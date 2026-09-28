@@ -331,8 +331,7 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
 
     // FIXED: Target the views-row directly where each notice resides
     const rows = $(".view-documents .views-row").toArray();
-    console.log("The rows are:", rows.length);
-    console.log(`[Unstructured Notice] \({rows.length} row(s) found on\){page.url}`);
+    console.log(`[Unstructured Notice] ${rows.length} row(s) found on ${page.url}`);
 
     const notices = await Promise.all(
         rows.map(async (rowElement) => {
