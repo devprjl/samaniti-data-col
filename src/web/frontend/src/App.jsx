@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-import { getPortalData, SCRAPER_WORKSPACE_ENABLED } from "./lib/api";
+import { getPortalData } from "./lib/api";
 import { getMunicipalityName } from "./lib/format";
 import Link from "./components/Link";
 import { useRouter } from "./lib/router";
@@ -41,7 +41,7 @@ function parseRoute(pathname) {
     if (segments[0] === "activity" && segments[1]) return { page: "run", id: segments[1] };
     if (segments[0] === "activity" && segments.length === 1) return { page: "activity" };
     if (segments[0] === "methodology" && segments.length === 1) return { page: "methodology" };
-    if (segments[0] === "workspace" && SCRAPER_WORKSPACE_ENABLED) {
+    if (segments[0] === "workspace") {
         return {
             page: "workspace",
             province: segments[1] || null,

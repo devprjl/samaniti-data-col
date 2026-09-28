@@ -149,7 +149,7 @@ DFlip PDFs are frequently embedded in inline JavaScript rather than linked:
 /var\s+pdf\s*=\s*['"]([^'"]+\.pdf[^'"]*)['"]/gi
 ```
 
-Each attachment becomes a `DocumentData` with a decoded `fileName`, the canonical un-styled `originalUrl`, a `fileType`, and a `downloadStatus` of `pending` (or `skipped` when `SKIP_FILE_DOWNLOADS=true`; `ok` or `failed` once a download has been attempted).
+Each attachment becomes a `DocumentData` with a decoded `fileName`, the canonical un-styled `originalUrl`, a `fileType`, and a `downloadStatus` of `skipped`. Nothing fetches the file itself, so a run is cheap and the portal serves the portal's own copy.
 
 ---
 

@@ -29,7 +29,7 @@ export interface DocumentData {
     fileType?: string | null;
     originalUrl: string;
     storagePath?: string | null;
-    /** "ok" when file saved, "failed" with downloadError when it errored, "skipped" when SKIP_FILE_DOWNLOADS=true */
+    /** "ok" when a file was saved, "failed" with downloadError when it errored, "skipped" when the run did not fetch the attachment */
     downloadStatus: DownloadStatus;
     /** Human-readable error message when downloadStatus is "failed" */
     downloadError?: string | null;

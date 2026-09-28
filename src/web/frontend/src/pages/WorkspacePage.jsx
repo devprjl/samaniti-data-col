@@ -314,7 +314,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
 
     if (status === "loading") return <LoadingState label="Loading route configurations" />;
 
-    // A read-only deployment refuses this route on purpose. That is a different
+    // Production refuses this route on purpose, with a 403. That is a different
     // situation from the backend being unreachable, and saying so beats an alert
     // that blames a database which is in fact working: the records on every other
     // page are being served from it.
@@ -328,9 +328,9 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                 />
                 <section className="panel workspace-guide-panel">
                     <EmptyState
-                        description="Starting a run is a write operation that sends requests to live government portals from this host's address, so it is switched off on a public instance. Everything collected so far is still browsable in the directory, the overview and the record pages."
+                        description="Starting a run is a write operation that sends requests to live government portals from this host's address, so it is refused in production. Everything collected so far is still browsable in the directory, the overview and the record pages."
                         icon="terminal"
-                        title="Scraping is disabled on this deployment"
+                        title="Forbidden: scraping is disabled in production"
                     />
                     <div className="panel-note">
                         <Icon name="info" size={17} />

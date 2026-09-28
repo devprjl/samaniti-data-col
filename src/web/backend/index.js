@@ -13,24 +13,40 @@ const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
 
 /**
+ * Whether this process is running on a serverless host.
+ *
+ * A serverless function has no repository checkout, no writable working directory
+ * worth the name, and a per-invocation CPU budget, so it is never a place a
+ * crawler should run. Vercel sets VERCEL at both build and runtime; AWS Lambda
+ * sets its own pair. Nothing has to be configured for this to be true, which is
+ * the point: it holds even on a host that never sets NODE_ENV, so a deployment
+ * cannot expose a crawler just because someone forgot one variable.
+ */
+const runningOnServerlessHost =
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.FUNCTION_TARGET);
+
+/**
  * Whether the scraper workspace is served.
  *
  * Running a scrape is not a read operation: it spawns crawlers against live
  * government portals from this host's IP address, and the CLI will run one worker
- * per CPU core. A publicly deployed instance must never expose it.
+ * per CPU core. A public instance must never expose it, so production refuses.
  *
- * So this is strictly opt-in, and production is a second, independent barrier.
- * Anything that is not an explicit SCRAPER_WORKSPACE_ENABLED=true leaves the run
- * endpoint unmounted, which is the state a deployment that configures nothing ends
- * up in. A deployment that also reports NODE_ENV=production cannot be talked out of
- * it even if a .env carrying the opt-in is shipped alongside.
+ * NODE_ENV is the switch, and it is the only one a deployment has to think
+ * about: set it to production and the workspace is unmounted, leave it and the
+ * workspace is available to whoever reaches the port. That asymmetry is
+ * deliberate. This is not a build-time switch and it does not change how the
+ * portal is built, it is a runtime guard on a write operation, so the safe
+ * direction is the one where forgetting it is loud rather than the one where
+ * forgetting it is silent and public.
  *
- * Both conditions are needed. Opt-in alone is undone by a .env that leaks into a
- * build; NODE_ENV alone is undone by a host that does not set one. Two independent
- * barriers, and neither is load-bearing on its own.
+ * The serverless check is the backstop for a host that leaves NODE_ENV unset.
+ * Vercel does not set it for the runtime, so a deployment that sets nothing at
+ * all would otherwise read as development.
  */
-const scraperWorkspaceEnabled =
-    process.env.SCRAPER_WORKSPACE_ENABLED === "true" && process.env.NODE_ENV !== "production";
+const scraperWorkspaceEnabled = process.env.NODE_ENV !== "production" && !runningOnServerlessHost;
 
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
@@ -40,10 +56,21 @@ const prisma = new PrismaClient({ adapter });
 // router pulls in the scraper pipeline, which opens its own Prisma client on
 // import. Loading it in a read-only deployment would add a second database
 // connection and the whole crawler stack for routes that cannot be called.
+//
+// A failure here is caught rather than allowed to escape. This runs at module
+// scope, so an uncaught throw would kill the process before Express ever sees a
+// request and turn an optional feature into a total outage: the registry throws
+// when it cannot find src/scrapers, which is exactly what happens wherever the
+// repository is not checked out. The workspace is optional, so losing it costs
+// the two /api/workspace routes and nothing else.
 let workspaceRouter = null;
 if (scraperWorkspaceEnabled) {
-    const { createWorkspaceRouter } = await import("./workspace/router.js");
-    workspaceRouter = createWorkspaceRouter(prisma);
+    try {
+        const { createWorkspaceRouter } = await import("./workspace/router.js");
+        workspaceRouter = createWorkspaceRouter(prisma);
+    } catch (error) {
+        console.error("[backend] Scraper workspace failed to start; serving read-only.", error);
+    }
 } else {
     console.log("[backend] Scraper workspace disabled; /api/workspace will not be served.");
 }
@@ -199,19 +226,27 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Scraper workspace: route configuration inspector and one-click route execution.
-// Not mounted at all when disabled, so POST /api/workspace/runs cannot be called
-// on a read-only deployment.
+// Not mounted at all when disabled, so POST /api/workspace/runs has no handler to
+// reach on a production instance.
 if (workspaceRouter) {
     app.use("/api/workspace", workspaceRouter);
 } else {
-    // A stable code, so the frontend can tell "this deployment is read-only by
-    // design" apart from "the database is unreachable". Both arrive as a failed
-    // request and a generic error message would blame the wrong thing.
+    // 403 rather than 404: the route is not missing, it is refused on purpose, and
+    // saying so is the whole point of a guard. A caller gets the reason without
+    // having to infer it from a 404.
+    //
+    // The stable code is what the frontend branches on, so it can tell "this
+    // deployment is read-only by design" apart from "the database is unreachable".
+    // Both arrive as a failed request and a generic error message would blame the
+    // wrong thing.
     app.use("/api/workspace", (_req, res) => {
-        res.status(404).json({
+        res.status(403).json({
             error: {
                 code: "scraper_workspace_disabled",
-                message: "Scraping is disabled on this deployment.",
+                message:
+                    "Forbidden: running scrapers is disabled in production. Scraping is a " +
+                    "write operation against live government portals, so it only runs from a " +
+                    "maintainer's machine, never from the deployed site.",
             },
         });
     });

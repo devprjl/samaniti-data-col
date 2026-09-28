@@ -20,6 +20,7 @@ A TypeScript web scraping and ETL (Extract, Transform, Load) pipeline that harve
 - [Project Architecture](#project-architecture)
 - [Prerequisites](#prerequisites)
 - [Installation & Setup](#installation--setup)
+- [Deployment](#deployment)
 - [npm Scripts](#npm-scripts)
 - [Running Scrapers](#running-scrapers)
 - [Pagination](#pagination)
@@ -193,8 +194,6 @@ samaniti-data-col/
 
     ```env
     DATABASE_URL='postgresql://user:password@localhost:5432/samaniti_db?schema=public'
-    SKIP_FILE_DOWNLOADS=true     # false to download attachments into storage/
-    FILE_DOWNLOAD_TIMEOUT_MS=60000
     SCRAPER_PAGINATION=false     # true to walk past the first listing page
     ```
 
@@ -218,6 +217,67 @@ samaniti-data-col/
     ```
 
     The API listens on `http://localhost:5001` and the UI on `http://localhost:5173`.
+
+---
+
+## Deployment
+
+The portal and the API deploy as one read-only Vercel project. `vercel.json` runs
+`npm ci`, then `npm run vercel-build` (which bundles the backend to
+`dist/backend.mjs` and builds the Vite frontend into `src/web/frontend/dist`, the
+`outputDirectory`). `api/[...path].js` hands the Express app to the runtime, and
+every `/api/*` path except unknown ones falls through to the SPA shell.
+
+### Environment variables
+
+Two, on the project:
+
+| Variable       | Required | Notes                                                                        |
+| :------------- | :------- | :--------------------------------------------------------------------------- |
+| `DATABASE_URL` | Yes      | A pooled Postgres URL. Must be reachable from the function, not `localhost`. |
+| `NODE_ENV`     | Yes      | Set it to `production`. This is the only switch that disables scraping.      |
+
+Nothing else. `SCRAPER_PAGINATION` is a per-machine setting for the CLI and is
+absent by default, which already means first page only.
+
+### Why `NODE_ENV`
+
+Scraping is a write operation against live government portals from the host's IP
+address, so the API refuses it in production and serves the collected records
+only. `NODE_ENV=production` is what turns that on. It is deliberately not a
+build-time switch: it does not change how the portal is built, and there is no
+separate production bundle. The portal is identical in every build, the workspace
+is in the navigation in every build, and the refusal happens at request time —
+so the two halves cannot disagree about whether scraping is available.
+
+The backend also refuses on any host it detects as serverless (`VERCEL=1`, AWS
+Lambda), which needs no configuration. That backstop exists because Vercel does
+not set `NODE_ENV` for the function runtime: a deployment that set nothing at all
+would otherwise read as development and expose a crawler.
+
+With the workspace refused, `GET` and `POST` on `/api/workspace/*` both answer
+`403` with the code `scraper_workspace_disabled`, and the workspace page explains
+itself instead of looking broken. A scraper request never reaches crawler code
+because the router is not mounted at all.
+
+### If every route returns 500
+
+`FUNCTION_INVOCATION_FAILED` on `/api/health` means the function failed before
+Express ran, so it is never a database problem. `GET /api/health` is the
+diagnostic: it answers `{"status":"ok"}` with no database involved, so if it
+fails, read the function's runtime log in the Vercel dashboard rather than
+debugging the connection string. A failure to load the bundle now answers
+`backend_bundle_unavailable` with the cause in the message, so a packaging
+problem no longer looks like a data problem.
+
+### Neon
+
+Both the direct and the pooled endpoints work; the pooled one (`-pooler.<region>`)
+is what you want on a serverless host. Append `?pgbouncer=true&connection_limit=1`
+to it. The pooler runs in transaction mode, so one server connection is handed to
+different clients in turn and a named prepared statement left behind by the
+previous client is already there for the next one; `pgbouncer=true` is what tells
+Prisma not to use them.
 
 ---
 
@@ -390,7 +450,7 @@ Both decisions keep the working copy of the scrapers in one place — the reposi
 - **One run at a time.** Enforced because the console capture used for the live log is process-wide.
 - **Only routes are targetable.** Province-wide and all-municipality runs remain CLI-only, so a stray click cannot start a multi-hour sweep.
 - **No scheduling.** Runs are manual; there is no queue, retry policy or cron entry point.
-- **Document downloads are not forced.** A run re-downloads attachments only when `SKIP_FILE_DOWNLOADS=false`; otherwise records are created with `downloadStatus: "skipped"`.
+- **Attachments are not downloaded.** A run records each attachment's `originalUrl`, `fileName` and `fileType` with `downloadStatus: "skipped"`. Nothing fetches the file, so no PDF is stored and the download endpoint redirects to the portal's own copy.
 
 ### Possible next steps
 

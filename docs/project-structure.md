@@ -175,7 +175,7 @@ samaniti-data-col/
 ### Utilities (`src/core/utils/`)
 
 - `html.ts` — DOM scoping, title/date extraction, and `normalizeOriginalImageUrl`, which turns Drupal derivative paths (`styles/thumbnail/public/…`) back into full-resolution originals and strips `?itok=` tokens. `extractDocumentLinks` also pulls PDFs out of embedded DFlip flipbook scripts.
-- `file.ts` — attachment downloads over undici, MIME verification, storage paths under `storage/<province>/<municipality>/…`, retries, and `SKIP_FILE_DOWNLOADS` handling.
+- `file.ts` — filename and MIME-type resolution for a record's attachment metadata.
 - `nepali.ts` — Bikram Sambat parsing, Gregorian conversion and fiscal-year extraction (e.g. `२०८०/०८१` → `2080/81`).
 - `pagination.ts` — `extractPaginationUrls`, reading further listing pages from the DOM's pager.
 - `url.ts` — `extractSlugFromUrl` (the origin of every route name) plus URL cleanup helpers.
@@ -251,11 +251,10 @@ Workspace-specific modules:
 
 ## Configuration
 
-| Variable                   | Purpose                                                                  |
-| :------------------------- | :----------------------------------------------------------------------- |
-| `DATABASE_URL`             | PostgreSQL connection string. Required at import time by the loader      |
-| `SKIP_FILE_DOWNLOADS`      | `true` records documents without downloading them                        |
-| `FILE_DOWNLOAD_TIMEOUT_MS` | Per-file download timeout                                                |
-| `SCRAPER_PAGINATION`       | `true` walks past the first listing page on every route; default `false` |
+| Variable             | Purpose                                                                  |
+| :------------------- | :----------------------------------------------------------------------- |
+| `DATABASE_URL`       | PostgreSQL connection string. Required at import time by the loader      |
+| `SCRAPER_PAGINATION` | `true` walks past the first listing page on every route; default `false` |
+| `NODE_ENV`           | `production` refuses the scraper workspace; unset serves it on a machine |
 
 Copy `.env.example` to `.env` and adjust. When starting the API, Crawlee's storage directory is pointed at the repository's `storage/` unless `CRAWLEE_STORAGE_DIR` is already set.

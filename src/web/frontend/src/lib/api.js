@@ -10,17 +10,8 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 /**
- * Whether the scraper workspace is offered in this build.
- *
- * Running a scrape is a write operation against live government portals, so a
- * deployed build hides it. The backend refuses those routes regardless; this only
- * keeps the navigation honest.
- */
-export const SCRAPER_WORKSPACE_ENABLED = import.meta.env.VITE_SCRAPER_WORKSPACE !== "false";
-
-/**
- * Error code the backend returns when the workspace is switched off, which it is on
- * any deployment. Lets the workspace page explain itself instead of reporting a
+ * Error code the backend returns when the workspace is refused, which it is in
+ * production. Lets the workspace page explain itself instead of reporting a
  * failure, since nothing has actually gone wrong.
  */
 export const SCRAPER_WORKSPACE_DISABLED = "scraper_workspace_disabled";

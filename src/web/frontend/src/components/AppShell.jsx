@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import Link from "./Link";
 import { useRouter } from "../lib/router";
 import { formatDateTime } from "../lib/format";
-import { SCRAPER_WORKSPACE_ENABLED } from "../lib/api";
 import Icon from "./Icon";
 import { Brand, ErrorBanner } from "./Primitives";
 
+// The workspace is always in the navigation. Whether it can actually run a scrape
+// is the backend's decision at request time, and the page explains a refusal
+// rather than looking broken, so there is nothing to hide here.
 const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
-    ...(SCRAPER_WORKSPACE_ENABLED
-        ? [{ to: "/workspace", label: "Scraper workspace", icon: "terminal" }]
-        : []),
+    { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 
