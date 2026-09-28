@@ -1,11 +1,11 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
-    "framework": null,
     "installCommand": "npm ci",
     "buildCommand": "npm run vercel-build",
     "outputDirectory": "src/web/frontend/dist",
     "env": {
-        "VITE_SCRAPER_WORKSPACE": "false"
+        "VITE_SCRAPER_WORKSPACE": "false",
+        "SCRAPER_WORKSPACE_ENABLED": "false"
     },
     "rewrites": [
         {
