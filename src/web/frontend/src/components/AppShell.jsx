@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "./Link";
 import { useRouter } from "../lib/router";
 import { formatDateTime } from "../lib/format";
+import { SCRAPER_WORKSPACE_ENABLED } from "../lib/api";
 import Icon from "./Icon";
 import { Brand, ErrorBanner } from "./Primitives";
 
@@ -9,7 +10,9 @@ const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
-    { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
+    ...(SCRAPER_WORKSPACE_ENABLED
+        ? [{ to: "/workspace", label: "Scraper workspace", icon: "terminal" }]
+        : []),
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 

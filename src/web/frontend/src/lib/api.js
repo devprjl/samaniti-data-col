@@ -1,5 +1,14 @@
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5001").replace(/\/$/, "");
 
+/**
+ * Whether the scraper workspace is offered in this build.
+ *
+ * Running a scrape is a write operation against live government portals, so a
+ * deployed build hides it. The backend refuses those routes regardless; this only
+ * keeps the navigation honest.
+ */
+export const SCRAPER_WORKSPACE_ENABLED = import.meta.env.VITE_SCRAPER_WORKSPACE !== "false";
+
 export async function apiRequest(path, options = {}) {
     const response = await fetch(`${API_BASE_URL}${path}`, {
         ...options,

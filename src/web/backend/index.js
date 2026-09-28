@@ -11,13 +11,35 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
 
-// Imported after the environment is loaded: the workspace router pulls in the scraper
-// pipeline, which opens its own Prisma client on import.
-const { createWorkspaceRouter } = await import("./workspace/router.js");
+/**
+ * Whether the scraper workspace is served.
+ *
+ * Running a scrape is not a read operation: it spawns crawlers against live
+ * government portals from this host's IP address. A publicly deployed instance
+ * must therefore never expose it, so the router is not mounted in production
+ * unless it is switched on deliberately. Set SCRAPER_WORKSPACE_ENABLED=true to
+ * allow it outside production.
+ */
+const isProduction = process.env.NODE_ENV === "production";
+const scraperWorkspaceEnabled =
+    process.env.SCRAPER_WORKSPACE_ENABLED === "true" ||
+    (process.env.SCRAPER_WORKSPACE_ENABLED !== "false" && !isProduction);
 
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
 const prisma = new PrismaClient({ adapter });
+
+// Imported after the environment is loaded, and only when enabled: the workspace
+// router pulls in the scraper pipeline, which opens its own Prisma client on
+// import. Loading it in a read-only deployment would add a second database
+// connection and the whole crawler stack for routes that cannot be called.
+let workspaceRouter = null;
+if (scraperWorkspaceEnabled) {
+    const { createWorkspaceRouter } = await import("./workspace/router.js");
+    workspaceRouter = createWorkspaceRouter(prisma);
+} else {
+    console.log("[backend] Scraper workspace disabled; /api/workspace will not be served.");
+}
 
 app.use(cors());
 app.use(express.json());
@@ -193,7 +215,15 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Scraper workspace: route configuration inspector and one-click route execution.
-app.use("/api/workspace", createWorkspaceRouter(prisma));
+// Not mounted at all when disabled, so POST /api/workspace/runs cannot be called
+// on a read-only deployment.
+if (workspaceRouter) {
+    app.use("/api/workspace", workspaceRouter);
+} else {
+    app.use("/api/workspace", (_req, res) => {
+        res.status(404).json({ error: "The scraper workspace is disabled on this instance." });
+    });
+}
 
 app.use((error, _req, res, _next) => {
     console.error(error);
