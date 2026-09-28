@@ -11,6 +11,7 @@ import {
     extractTitle,
     extractDocumentLinks,
     extractDate,
+    buildDocument,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
 
@@ -135,44 +136,42 @@ async function transformReportRow(
 
 async function transformNoticeRow(
     $: cheerio.CheerioAPI,
-    row: cheerio.Cheerio<any>,
+    row: cheerio.Cheerio<cheerio.Element>,
     baseUrl: string,
     category: string,
 ): Promise<PolicyEntityData> {
-    const titleAnchor = row.find(".views-field-title a, h2 a, h2, td").first();
-    const titleNe = titleAnchor.text().trim().replace(/\s+/g, " ") || "";
-    const rawHref = titleAnchor.attr("href") || "";
+    const titleCell = row.find(".views-field-title");
+    const docEl = row.find(".views-field-field-documents a");
+    const fiscalYearEl = row.find(".views-field-field-fiscal-year");
 
-    let sourceUrl = "";
-    if (rawHref) {
-        try {
-            sourceUrl = decodeURIComponent(new URL(rawHref, baseUrl).href);
-        } catch {
-            sourceUrl = rawHref;
-        }
+    const titleNe = titleCell.text().trim() || "";
+
+    const docHref = docEl.attr("href") || "";
+    const fullDocUrl = docHref
+        ? docHref.startsWith("http")
+            ? docHref
+            : `${baseUrl}${docHref}`
+        : "";
+
+    const docName = docEl.text().trim() || titleNe;
+
+    const documents: DocumentData[] = [];
+    if (fullDocUrl) {
+        documents.push(await buildDocument(fullDocUrl, baseUrl, docName, null));
     }
 
-    const fiscalYearAnchor = row.find(".views-field-field-fiscal-year a");
-    const fiscalYearCellText = fiscalYearAnchor.text().trim();
-    const fiscalYear = fiscalYearCellText || parseNepaliFiscalYear(titleNe) || null;
-
-    const createdTd = row.find(".views-field-created");
-    const dateCreated = createdTd.text().trim() || null;
-
-    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    const fiscalYear = fiscalYearEl.text().trim() || null;
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
         category: "notice",
         titleNe,
         titleEn: null,
-        type: category || null,
-        sourceUrl,
+        type: category,
+        publishedDate: null,
+        fiscalYear,
+        sourceUrl: fullDocUrl ? decodeURIComponent(fullDocUrl) : "",
         documents,
-        publishedDate: dateCreated,
-        metadata: {
-            fiscalYear,
-        },
     };
 }
 
