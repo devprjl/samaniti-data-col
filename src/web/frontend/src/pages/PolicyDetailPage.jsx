@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Link from "../components/Link";
 import {
     formatBudget,
@@ -7,6 +8,7 @@ import {
     getMunicipalityName,
     getPolicyTitle,
 } from "../lib/format";
+import { getPolicy } from "../lib/api";
 import Icon from "../components/Icon";
 import { PolicyDocuments } from "../components/PolicyTable";
 import { CategoryBadge, EmptyState, PageHeader } from "../components/Primitives";
@@ -21,6 +23,38 @@ function DetailMeta({ label, value }) {
 }
 
 export default function PolicyDetailPage({ policy, municipality }) {
+    // The list endpoint leaves out record bodies so a whole collection fits in a
+    // single response, so the body is fetched here. The list copy renders
+    // immediately and this fills it in.
+    const [full, setFull] = useState(policy);
+    const [bodyPending, setBodyPending] = useState(false);
+
+    useEffect(() => {
+        setFull(policy);
+    }, [policy]);
+
+    useEffect(() => {
+        if (!policy?.id || policy.contentNe || policy.contentEn) return undefined;
+
+        let active = true;
+        setBodyPending(true);
+
+        getPolicy(policy.id)
+            .then((record) => {
+                if (active) setFull(record);
+            })
+            .catch(() => {
+                // Keep the list copy; the body panel explains what is missing.
+            })
+            .finally(() => {
+                if (active) setBodyPending(false);
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [policy?.id, policy?.contentNe, policy?.contentEn]);
+
     if (!policy) {
         return (
             <div className="page-stack">
@@ -43,10 +77,11 @@ export default function PolicyDetailPage({ policy, municipality }) {
         );
     }
 
+    const record = full || policy;
     const backTo = municipality
         ? `/municipalities/${encodeURIComponent(municipality.id)}/policies`
         : "/municipalities";
-    const content = policy.contentEn || policy.contentNe;
+    const content = record.contentEn || record.contentNe;
 
     return (
         <div className="page-stack">
@@ -102,22 +137,33 @@ export default function PolicyDetailPage({ policy, municipality }) {
                             />
                             <DetailMeta
                                 label="Published date"
-                                value={formatDate(policy.publishedDate || policy.createdAt)}
+                                value={formatDate(record.publishedDate || record.createdAt)}
                             />
-                            <DetailMeta label="Fiscal year" value={policy.fiscalYear} />
+                            <DetailMeta label="Fiscal year" value={record.fiscalYear} />
                             <DetailMeta
                                 label="Record type"
                                 value={policy.type?.replace(/[-_]/g, " ")}
                             />
+                            {/* Served only by the detail endpoint, so they stay blank
+                                until it answers rather than flashing "Not listed". */}
                             <DetailMeta
                                 label="Status"
-                                value={policy.status?.replace(/[-_]/g, " ")}
+                                value={bodyPending ? null : record.status?.replace(/[-_]/g, " ")}
                             />
                             <DetailMeta
                                 label="Ward"
-                                value={policy.wardNo ? `Ward ${formatNumber(policy.wardNo)}` : null}
+                                value={
+                                    bodyPending
+                                        ? null
+                                        : record.wardNo
+                                          ? `Ward ${formatNumber(record.wardNo)}`
+                                          : null
+                                }
                             />
-                            <DetailMeta label="Budget" value={formatBudget(policy.budgetAmount)} />
+                            <DetailMeta
+                                label="Budget"
+                                value={bodyPending ? null : formatBudget(record.budgetAmount)}
+                            />
                             <DetailMeta
                                 label="Source language"
                                 value={
@@ -139,10 +185,15 @@ export default function PolicyDetailPage({ policy, municipality }) {
                             </div>
                             <Icon name="file" size={20} />
                         </div>
-                        {content ? (
+                        {bodyPending ? (
+                            <div className="panel-note panel-note-spaced" role="status">
+                                <Icon name="info" size={17} />
+                                <span>Loading the published content…</span>
+                            </div>
+                        ) : content ? (
                             <div className="record-content">
-                                {policy.contentEn && <p lang="en">{policy.contentEn}</p>}
-                                {policy.contentNe && <p lang="ne">{policy.contentNe}</p>}
+                                {record.contentEn && <p lang="en">{record.contentEn}</p>}
+                                {record.contentNe && <p lang="ne">{record.contentNe}</p>}
                             </div>
                         ) : (
                             <div className="panel-note panel-note-spaced">
@@ -164,10 +215,10 @@ export default function PolicyDetailPage({ policy, municipality }) {
                                 <h2>Documents</h2>
                             </div>
                             <span className="section-count">
-                                {formatNumber(policy.documents?.length || 0)}
+                                {formatNumber(record.documents?.length || 0)}
                             </span>
                         </div>
-                        <PolicyDocuments documents={policy.documents} />
+                        <PolicyDocuments documents={record.documents} />
                     </section>
 
                     <section className="panel provenance-panel">
@@ -185,7 +236,9 @@ export default function PolicyDetailPage({ policy, municipality }) {
                             </div>
                             <div>
                                 <span>Last updated</span>
-                                <strong>{formatDateTime(policy.updatedAt)}</strong>
+                                <strong>
+                                    {bodyPending ? "—" : formatDateTime(record.updatedAt)}
+                                </strong>
                             </div>
                             {municipality && (
                                 <div>

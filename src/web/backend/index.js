@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { municipalitySelect, policyListSelect, policySelect } from "./selects.js";
 
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
@@ -15,15 +16,18 @@ dotenv.config({ path: path.resolve(backendDirectory, "../../../.env") });
  * Whether the scraper workspace is served.
  *
  * Running a scrape is not a read operation: it spawns crawlers against live
- * government portals from this host's IP address. A publicly deployed instance
- * must therefore never expose it, so the router is not mounted in production
- * unless it is switched on deliberately. Set SCRAPER_WORKSPACE_ENABLED=true to
- * allow it outside production.
+ * government portals from this host's IP address, and the CLI will run one worker
+ * per CPU core. A publicly deployed instance must never expose it, so production is
+ * a hard off switch that no other setting can undo.
+ *
+ * The ordering matters. An earlier version treated SCRAPER_WORKSPACE_ENABLED=true as
+ * an opt-in that overrode NODE_ENV, which meant a deployment that shipped a .env
+ * file — the repo's own .env.example sets that variable — served the run endpoint
+ * even with NODE_ENV=production. Being able to reach it has to be impossible by
+ * accident, so production always wins and the variable only turns it off elsewhere.
  */
-const isProduction = process.env.NODE_ENV === "production";
 const scraperWorkspaceEnabled =
-    process.env.SCRAPER_WORKSPACE_ENABLED === "true" ||
-    (process.env.SCRAPER_WORKSPACE_ENABLED !== "false" && !isProduction);
+    process.env.NODE_ENV !== "production" && process.env.SCRAPER_WORKSPACE_ENABLED !== "false";
 
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
@@ -43,15 +47,6 @@ if (scraperWorkspaceEnabled) {
 
 app.use(cors());
 app.use(express.json());
-
-const municipalitySelect = {
-    id: true,
-    code: true,
-    nameEn: true,
-    nameNe: true,
-    province: true,
-    district: true,
-};
 
 const asyncRoute = (handler) => (req, res, next) => {
     Promise.resolve(handler(req, res, next)).catch(next);
@@ -80,6 +75,7 @@ app.get(
 
 // Get every policy entity in one response so the portal can browse and
 // filter the complete collection without making a request per municipality.
+// Bodies are omitted here; GET /api/policies/:id returns one complete record.
 app.get(
     "/api/policies",
     asyncRoute(async (req, res) => {
@@ -96,42 +92,27 @@ app.get(
         const policies = await prisma.policyEntity.findMany({
             where,
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            select: {
-                id: true,
-                municipalityId: true,
-                category: true,
-                titleNe: true,
-                titleEn: true,
-                contentNe: true,
-                contentEn: true,
-                type: true,
-                fiscalYear: true,
-                budgetAmount: true,
-                status: true,
-                wardNo: true,
-                publishedDate: true,
-                sourceUrl: true,
-                metadata: true,
-                createdAt: true,
-                updatedAt: true,
-                municipality: { select: municipalitySelect },
-                documents: {
-                    select: {
-                        id: true,
-                        fileName: true,
-                        fileType: true,
-                        originalUrl: true,
-                        storagePath: true,
-                        downloadStatus: true,
-                        downloadError: true,
-                        createdAt: true,
-                    },
-                    orderBy: { createdAt: "asc" },
-                },
-            },
+            select: policyListSelect,
         });
 
         res.json(policies);
+    }),
+);
+
+// One complete record, including the notice/report body, for the detail page.
+app.get(
+    "/api/policies/:id",
+    asyncRoute(async (req, res) => {
+        const policy = await prisma.policyEntity.findUnique({
+            where: { id: String(req.params.id) },
+            select: policySelect,
+        });
+
+        if (!policy) {
+            return res.status(404).json({ error: "Policy record not found" });
+        }
+
+        return res.json(policy);
     }),
 );
 

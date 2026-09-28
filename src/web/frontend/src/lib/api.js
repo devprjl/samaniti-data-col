@@ -44,6 +44,16 @@ export function getDocumentDownloadUrl(documentId) {
     return `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/download`;
 }
 
+/**
+ * One complete record.
+ *
+ * The list endpoint omits record bodies so a full collection stays under the
+ * 4.5 MB a serverless response allows, so the detail page fetches its own.
+ */
+export function getPolicy(policyId) {
+    return apiRequest(`/api/policies/${encodeURIComponent(policyId)}`);
+}
+
 /** Route configurations, scraper targets and execution settings for the scraper workspace. */
 export function getScraperWorkspace() {
     return apiRequest("/api/workspace/routes");
