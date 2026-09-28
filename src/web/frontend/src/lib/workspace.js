@@ -54,13 +54,17 @@ export function isRecordForRoute(policy, route) {
     );
 }
 
-/** Records of one route, restricted to the route's own municipality. */
+/**
+ * Records of one route, restricted to the route's own municipality.
+ *
+ * A target with no municipality row cannot own records, since every policy row
+ * is attached to a municipality.
+ */
 export function recordsForRoute(policies, route, target) {
-    if (!route) return [];
+    if (!route || !target?.municipalityId) return [];
     return (policies || []).filter(
         (policy) =>
-            (!target?.municipalityId || policy.municipalityId === target.municipalityId) &&
-            isRecordForRoute(policy, route),
+            policy.municipalityId === target.municipalityId && isRecordForRoute(policy, route),
     );
 }
 
@@ -79,10 +83,16 @@ function recordPath(policy) {
  * A single pass builds the two indexes the routes need (the route tag stored on
  * the record, and the URL it was collected from) so the route list can show
  * record counts without re-scanning every record for every route.
+ *
+ * The municipality is the only reliable scope: route names repeat across
+ * municipalities, so a target without a row of its own has to report nothing
+ * rather than fall back to every record in the portal.
  */
 export function collectRouteRecords(policies, routeGroups, target) {
+    if (!target?.municipalityId) return new Map();
+
     const records = (policies || []).filter(
-        (policy) => !target?.municipalityId || policy.municipalityId === target.municipalityId,
+        (policy) => policy.municipalityId === target.municipalityId,
     );
 
     const byType = new Map();
