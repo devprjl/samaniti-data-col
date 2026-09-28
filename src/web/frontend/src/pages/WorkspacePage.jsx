@@ -13,6 +13,7 @@ import {
     SearchField,
     SectionHeading,
     SelectField,
+    Spinner,
 } from "../components/Primitives";
 import { getScraperRun, getScraperWorkspace, startScraperRun } from "../lib/api";
 import { formatNumber, pluralize } from "../lib/format";
@@ -20,6 +21,7 @@ import { collectRouteRecords, groupRoutesByName, normalizeRouteKey } from "../li
 import { useRouter } from "../lib/router";
 
 const POLL_INTERVAL_MS = 1500;
+const RUN_PHASE_LABEL = { starting: "Starting…", running: "Running…" };
 
 function parseWorkspacePath(pathname) {
     const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -51,7 +53,32 @@ function RunStatusDot({ run }) {
     );
 }
 
-function RouteRow({ routeGroup, records, run, isSelected, onSelect, onRun, disabled }) {
+/**
+ * Launch control for the scraper CLI. The phase turns the same button into the
+ * progress indicator for the request it triggered, so the operator can see which
+ * of the competing run controls is already busy. `context` names the target for
+ * assistive technology, since several of these buttons share the same label.
+ */
+function RunButton({ className, context, disabled, iconSize = 14, label, onClick, phase, title }) {
+    const text = phase ? RUN_PHASE_LABEL[phase] : label;
+
+    return (
+        <button
+            aria-busy={phase ? true : undefined}
+            aria-label={context ? `${text} ${context}` : undefined}
+            className={className}
+            disabled={disabled}
+            onClick={onClick}
+            title={phase ? text : title}
+            type="button"
+        >
+            {phase ? <Spinner size={iconSize} /> : <Icon name="play" size={iconSize} />}
+            {text}
+        </button>
+    );
+}
+
+function RouteRow({ routeGroup, records, run, isSelected, onSelect, onRun, disabled, phase }) {
     return (
         <li className={`route-row${isSelected ? " route-row-active" : ""}`}>
             <button className="route-row-main" onClick={onSelect} type="button">
@@ -67,17 +94,16 @@ function RouteRow({ routeGroup, records, run, isSelected, onSelect, onRun, disab
                     </span>
                 </span>
             </button>
-            <button
-                aria-label={`Run route ${routeGroup.routeName}`}
+            <RunButton
                 className="button button-secondary button-small route-row-run"
+                context={`route ${routeGroup.routeName}`}
                 disabled={disabled}
+                iconSize={13}
+                label="Run"
                 onClick={onRun}
+                phase={phase}
                 title={`Run ${routeGroup.key}`}
-                type="button"
-            >
-                <Icon name="play" size={13} />
-                Run
-            </button>
+            />
         </li>
     );
 }
@@ -91,7 +117,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
     const [error, setError] = useState(null);
     const [run, setRun] = useState(null);
     const [runError, setRunError] = useState(null);
-    const [starting, setStarting] = useState(false);
+    const [startingKey, setStartingKey] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [paginationMode, setPaginationMode] = useState("default");
     const [filter, setFilter] = useState("");
@@ -233,7 +259,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
 
     async function startRun(key) {
         setRunError(null);
-        setStarting(true);
+        setStartingKey(key);
         try {
             const { job } = await startScraperRun(
                 key,
@@ -247,8 +273,15 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                     : "The run could not be started.",
             );
         } finally {
-            setStarting(false);
+            setStartingKey(null);
         }
+    }
+
+    /** Phase of the run control that owns `key`, so only that button reports progress. */
+    function runPhase(key) {
+        if (startingKey === key) return "starting";
+        if (activeRun?.key === key) return "running";
+        return null;
     }
 
     function selectRoute(routeName) {
@@ -304,7 +337,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
     const selectedRecords = activeRouteGroup
         ? recordsByRoute.get(activeRouteGroup.routeName) || []
         : [];
-    const isBusy = Boolean(activeRun) || starting;
+    const isBusy = Boolean(activeRun) || Boolean(startingKey);
 
     return (
         <div className="page-stack workspace-page">
@@ -402,15 +435,14 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                     Open public page <Icon name="arrow-right" size={15} />
                                 </a>
                             )}
-                            <button
+                            <RunButton
                                 className="button button-secondary"
+                                context={`every route of ${target.key}`}
                                 disabled={isBusy || !target.runnable}
+                                label={`Run all ${routeGroups.length} routes`}
                                 onClick={() => startRun(target.key)}
-                                type="button"
-                            >
-                                <Icon name="play" size={14} />
-                                Run all {routeGroups.length} routes
-                            </button>
+                                phase={runPhase(target.key)}
+                            />
                         </div>
                     </div>
                 )}
@@ -435,12 +467,13 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                 </div>
             )}
 
-            {activeRun && (
+            {(activeRun || startingKey) && (
                 <div className="workspace-busy-note">
                     <span className="workspace-busy-pulse" />
                     <span>
-                        A run is in progress for <strong>{activeRun.key}</strong>. Only one run can
-                        use the pipeline at a time.
+                        {activeRun ? "A run is in progress" : "A run is starting"} for{" "}
+                        <strong>{activeRun?.key || startingKey}</strong>. Only one run can use the
+                        pipeline at a time.
                     </span>
                 </div>
             )}
@@ -488,6 +521,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                     key={group.routeName}
                                     onRun={() => startRun(group.key)}
                                     onSelect={() => selectRoute(group.routeName)}
+                                    phase={runPhase(group.key)}
                                     records={recordsByRoute.get(group.routeName) || []}
                                     routeGroup={group}
                                     run={recentRuns[group.key]}
@@ -530,15 +564,14 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                             ]}
                                             value={paginationMode}
                                         />
-                                        <button
+                                        <RunButton
                                             className="button button-primary"
+                                            context={activeRouteGroup.key}
                                             disabled={isBusy}
+                                            label="Run this route"
                                             onClick={() => startRun(activeRouteGroup.key)}
-                                            type="button"
-                                        >
-                                            <Icon name="play" size={14} />
-                                            Run this route
-                                        </button>
+                                            phase={runPhase(activeRouteGroup.key)}
+                                        />
                                     </div>
                                 </div>
 
@@ -566,7 +599,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                     emptyTitle="No records for this route"
                                     pageSize={10}
                                     policies={selectedRecords}
-                                    resetKey={activeRouteGroup.routeName}
+                                    resetKey={activeRouteGroup.key}
                                 />
                             </section>
                         </>

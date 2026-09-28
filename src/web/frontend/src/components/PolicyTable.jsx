@@ -10,20 +10,8 @@ import {
 } from "../lib/format";
 import Link from "./Link";
 import Icon from "./Icon";
+import DocumentMenu from "./DocumentMenu";
 import { CategoryBadge, EmptyState } from "./Primitives";
-
-function DocumentCount({ documents }) {
-    const count = documents?.length || 0;
-
-    if (count === 0) return <span className="muted-value">None</span>;
-
-    return (
-        <span className="document-count">
-            <Icon name="file" size={15} />
-            {formatNumber(count)}
-        </span>
-    );
-}
 
 function SourceLink({ policy }) {
     if (!policy.sourceUrl) return <span className="muted-value">Unavailable</span>;
@@ -165,7 +153,7 @@ export default function PolicyTable({
                                     </span>
                                 </td>
                                 <td>
-                                    <DocumentCount documents={policy.documents} />
+                                    <DocumentMenu documents={policy.documents} />
                                 </td>
                                 <td>
                                     <SourceLink policy={policy} />
