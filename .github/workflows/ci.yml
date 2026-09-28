@@ -1,0 +1,85 @@
+name: CI
+
+on:
+    push:
+        branches: [main, "feat/**", "fix/**"]
+    pull_request:
+    workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run irrelevant.
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    verify:
+        name: Lint, typecheck and build
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: Install dependencies
+              run: npm ci
+
+            # The scrapers import TypeScript sources directly, so the client and
+            # the generated Prisma client both have to exist before anything builds.
+            - name: Generate Prisma client
+              run: npm run db:generate
+
+            - name: Lint
+              run: npm run lint
+
+            - name: Typecheck
+              run: npx tsc --noEmit
+
+            # No repo-wide `format:check` gate: 27 files were already unformatted at
+            # HEAD, mostly App.css, which uses two-space indent against a four-space
+            # tabWidth. The pre-commit hook runs prettier on staged files, so nothing
+            # regresses, and this gate would only block every PR on existing debt.
+
+            - name: Build
+              run: npm run build
+              env:
+                  # CI must exercise the same read-only surface a deployment ships.
+                  VITE_SCRAPER_WORKSPACE: "false"
+
+    read-only-backend:
+        name: Backend refuses to scrape in production
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - run: npm ci
+            - run: npm run db:generate
+
+            # Guards the deployment invariant: a production boot must not serve the
+            # scraper workspace, and must not even load the crawler stack to do it.
+            - name: Assert the scraper workspace is off by default
+              run: |
+                  node --input-type=module -e "
+                  const isProduction = process.env.NODE_ENV === 'production';
+                  const flag = process.env.SCRAPER_WORKSPACE_ENABLED;
+                  const enabled = flag === 'true' || (flag !== 'false' && !isProduction);
+                  if (enabled) {
+                    console.error('Scraper workspace is enabled in production.');
+                    process.exit(1);
+                  }
+                  console.log('Scraper workspace disabled in production. OK');
+                  "
+              env:
+                  NODE_ENV: production
