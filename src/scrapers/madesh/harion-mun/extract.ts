@@ -27,66 +27,12 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "main#all-blocks",
         detailType: "noticeDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/press-release/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/tender-award-notice/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/executive-decisions/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/municipal-assembly-decisions/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/public-hearing-report/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/category/proactive-disclosure/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
+    // Portal page with no data, not scraped: /category/press-release
+    // Portal page with no data, not scraped: /category/tender-award-notice
+    // Portal page with no data, not scraped: /category/executive-decisions
+    // Portal page with no data, not scraped: /category/municipal-assembly-decisions
+    // Portal page with no data, not scraped: /category/public-hearing-report
+    // Portal page with no data, not scraped: /category/proactive-disclosure
     {
         type: "report",
         live: `${BASE_URL}/category/act/`,
@@ -150,16 +96,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "main#all-blocks",
         detailType: "noticeDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/category/annual-report-booklet/`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: "main#all-blocks .news-grid",
-    //     detailSelector: "a",
-    //     detailContentSelector: "main#all-blocks",
-    //     detailType: "noticeDetail",
-    // },
+    // Portal page with no data, not scraped: /category/annual-report-booklet
 ];
 
 export async function extract(config?: ScraperConfig): Promise<ScrapedPage[]> {

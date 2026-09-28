@@ -104,14 +104,6 @@ export function extractDate($: CheerioAPI): string {
 }
 
 /**
- * Checks if a page contains a views table (listing) or a detail view.
- */
-export function isListView(html: string): boolean {
-    const $ = cheerioLoad(html);
-    return $(".views-row").length > 0;
-}
-
-/**
  * Extracts the title from HTML, trying multiple selectors in order of preference.
  */
 export function extractTitle($: CheerioAPI): string {
@@ -127,19 +119,12 @@ export function extractTitle($: CheerioAPI): string {
 }
 
 /**
- * Normalizes Drupal/CMS styled image and thumbnail URLs to their original,
- * uncompressed full-resolution source URLs for high-quality OCR processing.
- *
- * Example:
- *   "https://bardaghatmun.gov.np/sites/bardaghatmun.gov.np/files/styles/thumbnail/public/field/image/Screenshot.png?itok=NZZ6oq5X"
- * becomes:
- *   "https://bardaghatmun.gov.np/sites/bardaghatmun.gov.np/files/field/image/Screenshot.png"
+ * Turns a Drupal thumbnail link into the full-size original image, so a download
+ * gets the real file instead of a scaled and re-encoded copy.
  */
-export function normalizeOriginalImageUrl(url: string): string {
-    // 1. Remove Drupal image style path segment: /styles/{style_name}/(public|private)/
+function normalizeOriginalImageUrl(url: string): string {
     let unstyled = url.replace(/\/styles\/[^/]+\/(public|private)\//, "/");
 
-    // 2. Strip Drupal itok query parameter while preserving other params if any
     try {
         const parsed = new URL(unstyled);
         if (parsed.searchParams.has("itok")) {

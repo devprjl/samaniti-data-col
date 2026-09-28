@@ -7,16 +7,6 @@ import { crawlRoutes } from "../../../core/scraper/crawler.js";
 
 export const BASE_URL = "https://shuddhodhanmunrupandehi.gov.np";
 
-/**
- * Route definitions for Sainamaina Municipality portal.
- *
- * - type: entity group used to dispatch the correct transformer ("report", "project", "notice")
- * - contentSelector: CSS selector for listing pages (e.g. ".view-content")
- * - detailSelector: CSS selector for item links on listing page (e.g. ".views-field-title a").
- *     When provided, crawler enqueues and visits each detail link.
- * - detailContentSelector: CSS selector to scope the HTML on the detail page (e.g. ".node-article, .node-full").
- * - detailType: custom routeType passed to ScrapedPage for transformer dispatch ("projectDetail").
- */
 export const ROUTES: RouteConfig[] = [
     {
         type: "project",
@@ -39,14 +29,7 @@ export const ROUTES: RouteConfig[] = [
         contentSelector: ".introduction .container .view-content",
         detailType: "project",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monthly-progress-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .view-content",
-    //     detailType: "project",
-    // },
+    // Portal page with no data, not scraped: /monthly-progress-report
     {
         type: "report",
         live: `${BASE_URL}/trimester-progress-report`,
@@ -70,14 +53,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: ".introduction .container",
         detailType: "reportDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monitoring-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .view-content",
-    //     detailType: "report",
-    // },
+    // Portal page with no data, not scraped: /monitoring-report
     {
         type: "report",
         live: `${BASE_URL}/public-hearing`,
@@ -85,22 +61,8 @@ export const ROUTES: RouteConfig[] = [
         contentSelector: ".introduction .container .view-content",
         detailType: "report",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/public-audit`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .view-content",
-    //     detailType: "report",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/social-audit`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .view-content",
-    //     detailType: "report",
-    // },
+    // Portal page with no data, not scraped: /public-audit
+    // Portal page with no data, not scraped: /social-audit
     {
         type: "report",
         live: `${BASE_URL}/publications`,
@@ -130,14 +92,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: ".introduction .container",
         detailType: "noticeDetail",
     },
-    // PAGE NOT FOUND
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/house-building`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .view-content",
-    //     detailType: "notice",
-    // },
+    // PAGE NOT FOUND, not scraped: /house-building
     {
         type: "notice",
         live: `${BASE_URL}/decisions`,

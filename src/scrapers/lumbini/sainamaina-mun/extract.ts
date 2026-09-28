@@ -7,16 +7,6 @@ import { crawlRoutes } from "../../../core/scraper/crawler.js";
 
 export const BASE_URL = "https://sainamainamun.gov.np";
 
-/**
- * Route definitions for Sainamaina Municipality portal.
- *
- * - type: entity group used to dispatch the correct transformer ("report", "project", "notice")
- * - contentSelector: CSS selector for listing pages (e.g. ".view-content")
- * - detailSelector: CSS selector for item links on listing page (e.g. ".views-field-title a").
- *     When provided, crawler enqueues and visits each detail link.
- * - detailContentSelector: CSS selector to scope the HTML on the detail page (e.g. ".node-article, .node-full").
- * - detailType: custom routeType passed to ScrapedPage for transformer dispatch ("projectDetail").
- */
 export const ROUTES: RouteConfig[] = [
     {
         type: "project",

@@ -16,13 +16,27 @@ export interface ScraperConfig {
     routeNames?: string[];
 }
 
+/**
+ * One page (or group of pages) to scrape from a municipality portal.
+ *
+ * Every municipality's `extract.ts` holds a list of these, and the crawler walks
+ * through them. A listing page is followed by its detail pages automatically when
+ * `detailSelector` is set.
+ */
 export interface RouteConfig {
+    /** What kind of record this is. Decides which transformer runs: "report", "project", "notice". */
     type: string;
+    /** The address to fetch. */
     live: string;
+    /** Used to turn relative links into full addresses. Defaults to the portal's own origin. */
     baseUrl?: string;
-    contentSelector?: string; // For Listing Pages (e.g., ".view-content")
-    detailSelector?: string; // To extract detail URLs from Listing (e.g., ".views-row h2 a")
-    detailContentSelector?: string; // For Detail Pages (e.g., ".region-content" or "#content")
+    /** Picks the listing rows out of a listing page, e.g. ".view-content". */
+    contentSelector?: string;
+    /** Picks the links to each item's own page, e.g. ".views-row h2 a". */
+    detailSelector?: string;
+    /** Picks the part of a detail page worth keeping, e.g. "#content". */
+    detailContentSelector?: string;
+    /** Tells the transformer which function to use, e.g. "projectDetail". */
     detailType?: string;
 }
 

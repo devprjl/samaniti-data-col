@@ -7,16 +7,6 @@ import { crawlRoutes } from "../../../core/scraper/crawler.js";
 
 export const BASE_URL = "https://ekdaramun.gov.np";
 
-/**
- * Route definitions for Sainamaina Municipality portal.
- *
- * - type: entity group used to dispatch the correct transformer ("report", "project", "notice")
- * - contentSelector: CSS selector for listing pages (e.g. ".view-content")
- * - detailSelector: CSS selector for item links on listing page (e.g. ".views-field-title a").
- *     When provided, crawler enqueues and visits each detail link.
- * - detailContentSelector: CSS selector to scope the HTML on the detail page (e.g. ".node-article, .node-full").
- * - detailType: custom routeType passed to ScrapedPage for transformer dispatch ("projectDetail").
- */
 export const ROUTES: RouteConfig[] = [
     {
         type: "project",
@@ -54,26 +44,8 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "#content .section",
         detailType: "reportDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monthly-progress-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "reportDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/trimester-progress-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "reportDetail",
-    // },
+    // Portal page with no data, not scraped: /monthly-progress-report
+    // Portal page with no data, not scraped: /trimester-progress-report
     {
         type: "report",
         live: `${BASE_URL}/audit-report`,
@@ -83,14 +55,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "#content .section",
         detailType: "reportDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monitoring-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .row .region-content",
-    //     detailType: "report",
-    // },
+    // Portal page with no data, not scraped: /monitoring-report
     {
         type: "report",
         live: `${BASE_URL}/public-hearing`,
@@ -100,36 +65,9 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "#content .section",
         detailType: "reportDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/public-audit`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "reportDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/social-audit`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "reportDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/publications`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "reportDetail",
-    // },
+    // Portal page with no data, not scraped: /public-audit
+    // Portal page with no data, not scraped: /social-audit
+    // Portal page with no data, not scraped: /publications
     {
         type: "notice",
         live: `${BASE_URL}/news-notices`,
@@ -157,16 +95,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "#content .section",
         detailType: "noticeDetail",
     },
-    // THIS PAGE HAS NOT DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/tax-and-fees`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .view-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: "#content .section",
-    //     detailType: "noticeDetail",
-    // },
+    // THIS PAGE HAS NOT DATA SO SKIP THIS, not scraped: /tax-and-fees
     {
         type: "notice",
         live: `${BASE_URL}/municipal-council-decision`,
@@ -185,16 +114,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: "#content .section",
         detailType: "noticeDetail",
     },
-    // // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "notice",
-    //     live: `${BASE_URL}/municipal-decision`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container .region-content",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: ".introduction .container .row",
-    //     detailType: "noticeDetail",
-    // },
+    // Portal page with no data, not scraped: /municipal-decision
 ];
 
 export async function extract(config?: ScraperConfig): Promise<ScrapedPage[]> {

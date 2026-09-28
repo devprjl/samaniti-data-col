@@ -7,16 +7,6 @@ import { crawlRoutes } from "../../../core/scraper/crawler.js";
 
 export const BASE_URL = "https://kanchanmun.gov.np";
 
-/**
- * Route definitions for Sainamaina Municipality portal.
- *
- * - type: entity group used to dispatch the correct transformer ("report", "project", "notice")
- * - contentSelector: CSS selector for listing pages (e.g. ".view-content")
- * - detailSelector: CSS selector for item links on listing page (e.g. ".views-field-title a").
- *     When provided, crawler enqueues and visits each detail link.
- * - detailContentSelector: CSS selector to scope the HTML on the detail page (e.g. ".node-article, .node-full").
- * - detailType: custom routeType passed to ScrapedPage for transformer dispatch ("projectDetail").
- */
 export const ROUTES: RouteConfig[] = [
     {
         type: "project",
@@ -45,14 +35,7 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: ".introduction .container",
         detailType: "projectDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monthly-progress-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".container .row .region-content",
-    //     detailType: "report",
-    // },
+    // Portal page with no data, not scraped: /monthly-progress-report
     {
         type: "report",
         live: `${BASE_URL}/trimester-progress-report`,
@@ -80,36 +63,9 @@ export const ROUTES: RouteConfig[] = [
         detailContentSelector: ".introduction .container",
         detailType: "reportDetail",
     },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/monitoring-report`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: ".introduction .container",
-    //     detailType: "reportDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/social-audit`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: ".introduction .container",
-    //     detailType: "reportDetail",
-    // },
-    // THIS PAGE HAS NO DATA SO SKIP THIS
-    // {
-    //     type: "report",
-    //     live: `${BASE_URL}/public-hearing`,
-    //     baseUrl: BASE_URL,
-    //     contentSelector: ".introduction .container",
-    //     detailSelector: "table tbody tr a[href*='/content']",
-    //     detailContentSelector: ".introduction .container",
-    //     detailType: "reportDetail",
-    // },
+    // Portal page with no data, not scraped: /monitoring-report
+    // Portal page with no data, not scraped: /social-audit
+    // Portal page with no data, not scraped: /public-hearing
     {
         type: "report",
         live: `${BASE_URL}/publications`,
