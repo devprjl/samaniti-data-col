@@ -159,10 +159,12 @@ export default function DocumentMenu({ documents }) {
                                             <a
                                                 aria-label={`Open ${fileName}`}
                                                 className="document-menu-action"
-                                                href={getDocumentDownloadUrl(document.id)}
+                                                href={
+                                                    sourceUrl || getDocumentDownloadUrl(document.id)
+                                                }
                                                 rel="noreferrer"
                                                 target="_blank"
-                                                title="Open the document"
+                                                title="Open the source document on the portal"
                                             >
                                                 <Icon name="arrow-up-right" size={13} />
                                             </a>
