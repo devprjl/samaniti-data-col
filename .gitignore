@@ -1,8 +1,69 @@
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
 node_modules/
 dist/
-.env
 *.log
 .DS_Store
+
+# ---------------------------------------------------------------------------
+# Environment
+#
+# .env holds DATABASE_URL and friends. Only .env.example is committed.
+# ---------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+
+# ---------------------------------------------------------------------------
+# Crawlee runtime state
+#
+# Request queues and key-value stores are written during a crawl. The crawler
+# drops its queue on a clean exit, so anything here is left by a run that was
+# interrupted and nothing reads it.
+# ---------------------------------------------------------------------------
 storage/
 data/
 uploads/
+
+# ---------------------------------------------------------------------------
+# OCR service (services/ocr)
+#
+# The OCR service is a Python package. Its own rules used to live in
+# services/ocr/.gitignore; they are consolidated here so the repository has a
+# single ignore file.
+# ---------------------------------------------------------------------------
+# No trailing slash: .venv is a symlink on some machines, and a directory-only
+# pattern would not match it.
+services/ocr/.venv
+services/ocr/venv
+services/ocr/.cache/
+services/ocr/output/
+services/ocr/.ruff_cache/
+services/ocr/.mypy_cache/
+services/ocr/.pytest_cache/
+services/ocr/*.egg-info/
+services/ocr/htmlcov/
+services/ocr/.coverage
+services/ocr/coverage.xml
+services/ocr/models/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Compiled Python and packaging output
+build/
+dist/
+*.tar.gz
+*.whl
+
+# ---------------------------------------------------------------------------
+# Editors
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.tmp
+*.sublime-project
+*.sublime-workspace
+Thumbs.db
