@@ -83,16 +83,36 @@ samaniti-data-col/
 │   ├── schema.prisma               # Municipality, Profile, PolicyEntity, Document, ScraperRun
 │   └── migrations/                 # SQL migration history
 ├── scripts/
-│   └── reset-db.ts                 # Destructive local database reset
+│   ├── enqueue-ocr.ts              # Queue pending documents onto Redis
+│   ├── reset-db.ts                 # Destructive local database reset
+│   ├── deploy-probe.mjs            # Boots the API in a child process and checks it answers
+│   └── verify-deployment.mjs       # Rehearses the Vercel build before shipping
+├── services/
+│   └── ocr/                        # Python OCR service: Flask API, queue worker, docling pipeline
+│       ├── main.py                 # CLI: convert one document
+│       ├── server.py               # Flask API, optionally hosting a worker thread
+│       ├── worker.py               # Redis consumer; downloads, converts, writes to Postgres
+│       ├── sweep.py                # Backlog triage: finds and marks unfetchable documents
+│       ├── settings.py             # .env discovery and required-variable lookup
+│       ├── db.py                   # psycopg access and the atomic "claim" documents
+│       └── ocr/                    # The conversion package
+│           ├── config.py           # Engine registry, hardware profiling, engine selection
+│           ├── pipeline.py         # docling converter factory and the render-to-image path
+│           ├── utils.py            # Filename sanitization and model cache lookup
+│           └── engines/            # PaddleOCR and SuryaOCR as native docling engines
 ├── src/
 │   ├── core/
 │   │   ├── constants/
 │   │   │   ├── file.ts             # Allowed extensions and MIME maps
-│   │   │   └── transformers.ts     # Route type constants
+│   │   │   └── transformers.ts     # executeTransform(): dispatch pages to per-type handlers
 │   │   ├── contracts/
 │   │   │   └── scraper.interface.ts# RouteConfig, ScraperConfig, ScrapedPage, IMunicipalityScraper
 │   │   ├── db/
 │   │   │   └── loader.ts           # Prisma client, upserts, ScraperRun telemetry
+│   │   ├── queue/
+│   │   │   ├── redis.ts            # Shared ioredis client for the OCR queue
+│   │   │   ├── ocr-producer.ts     # Claims pending documents and pushes them onto Redis
+│   │   │   └── types.ts            # OcrStatus and the worker job payload
 │   │   ├── scraper/
 │   │   │   ├── crawler.ts          # Crawlee CheerioCrawler, route selection, pagination
 │   │   │   ├── pipeline.ts         # The single extract → transform → load execution path
@@ -103,10 +123,10 @@ samaniti-data-col/
 │   │   │   └── domain.ts           # PolicyEntityData, DocumentData, MunicipalityData, EtlPayload
 │   │   └── utils/
 │   │       ├── document.ts         # DocumentData factory
-│   │       ├── file.ts             # Attachment download, storage paths, retries
+│   │       ├── file.ts             # Filename → extension and MIME type
 │   │       ├── html.ts             # DOM scoping, dates, Drupal image un-styling
 │   │       ├── index.ts            # Barrel re-export
-│   │       ├── metadata.ts         # Key-value and metadata parsers
+│   │       ├── metadata.ts         # Scrape metadata and page-count helpers
 │   │       ├── nepali.ts           # Nepali date and fiscal-year helpers
 │   │       ├── pagination.ts       # Listing page URL discovery
 │   │       └── url.ts              # URL cleanup, slug extraction
@@ -129,6 +149,7 @@ samaniti-data-col/
 │   └── web/
 │       ├── backend/                # Express API (port 5001, run via tsx)
 │       │   ├── index.js            # Data, policy, run and document endpoints
+│       │   ├── selects.js          # Shared Prisma select shapes
 │       │   ├── package.json
 │       │   └── workspace/          # Route configuration + run execution
 │       │       ├── router.js       # /api/workspace routes
@@ -143,8 +164,13 @@ samaniti-data-col/
 │           │   └── App.css         # Design tokens and layout
 │           ├── vite.config.js
 │           └── package.json
+├── api/[...path].js                # Vercel function that fronts the bundled API
 ├── runner.ts                       # CLI scraper orchestrator
-├── storage/                        # Attachments + Crawlee state (gitignored)
+├── mise.toml                       # Pins Node and Python for the repository
+├── Dockerfile                      # Scraper + web workspace image (needs Chromium)
+├── Dockerfile.ocr                  # Python OCR service image
+├── docker-compose.yml              # Postgres, Redis, OCR service, optional scraper
+├── storage/                        # Crawlee request queues (gitignored, runtime state)
 ├── tsconfig.json
 └── package.json                    # Workspaces, scripts, dependencies
 ```
@@ -184,6 +210,77 @@ samaniti-data-col/
 ### Database layer (`src/core/db/loader.ts`)
 
 Creates the Prisma client through `@prisma/adapter-pg`, exposes `upsertMunicipality`, `upsertMunicipalityProfile` and `upsertPolicyEntity` (deduplicating documents by `originalUrl`), `loadEtlData` for a batch, and `recordScraperRun` for telemetry.
+
+### OCR queue (`src/core/queue/`)
+
+The producer half of the OCR pipeline. `ocr-producer.ts` claims documents and pushes
+them onto a Redis list; `redis.ts` owns the shared ioredis client; `types.ts` holds the
+`OcrStatus` vocabulary and the job payload the Python worker expects.
+
+Queueing is **claim-based**, and that is the whole design. `claimPendingDocuments` runs
+a single `UPDATE … RETURNING` that moves documents from `pending` to `queued` and
+reports only the rows it actually took, with `FOR UPDATE SKIP LOCKED` so two producers
+skip each other's rows instead of blocking.
+
+Without the claim, the ETL — which loads one page at a time — re-queued the same
+backlog once per page, filling Redis with duplicate work before the worker finished a
+single job. Claiming also makes the two producers agree: the Node scraper and the
+Python `POST /jobs/enqueue-pending` endpoint are the same operation, and both are
+idempotent.
+
+A document is handed back out if it sits in `queued` for over an hour or in
+`processing` for over six, because those are exactly what a killed worker leaves
+behind.
+
+Two lifecycle rules the producers depend on:
+
+- **`redis.ts` must be closed.** The connection holds the Node event loop open, so a
+  process that queues work and never closes it prints its last line and hangs.
+  `runScraperPipeline` closes it in its `finally`, which is the single exit point for
+  both the CLI (one child process per scraper) and the workspace (background tasks).
+- **Documents that are already `queued` or `processing` are never re-selected**, so
+  `enqueuePendingDocuments` is safe to call from the load path.
+
+---
+
+## OCR Service (`services/ocr/`)
+
+A Python package that converts documents to Markdown with [docling](https://github.com/DS4SD/docling)
+and writes the text into `documents.ocr_data`. It is a separate runtime because it
+needs Python 3.13 and several gigabytes of native ML dependencies.
+
+| File              | Role                                                                                                             |
+| :---------------- | :--------------------------------------------------------------------------------------------------------------- |
+| `settings.py`     | Resolves `.env` relative to the file, not the working directory, and fails loudly on a missing required variable |
+| `db.py`           | psycopg access, plus `claim_pending_documents()` — the same atomic claim as the Node producer                    |
+| `server.py`       | Flask API: `/health`, `/queue`, `/jobs`, `/jobs/enqueue-pending`                                                 |
+| `worker.py`       | `BRPOP` consumer; downloads, converts, writes the result                                                         |
+| `main.py`         | CLI for converting a single document                                                                             |
+| `sweep.py`        | Backlog triage: finds documents whose host no longer answers                                                     |
+| `ocr/config.py`   | Engine registry, hardware profiling, engine selection and fallbacks                                              |
+| `ocr/pipeline.py` | Builds the docling converter; renders PDF pages to images                                                        |
+| `ocr/engines/`    | PaddleOCR and SuryaOCR as native docling OCR engines                                                             |
+
+### Why pages are rendered before conversion
+
+Nepali government PDFs embed legacy font encodings (Preeti, Kantipur) whose text layer
+decodes to garbled ASCII, which then misleads docling's table cell matching. So
+`convert_document` rasterises each page to a PNG with `pypdfium2` first and runs
+recognition on the pixels. The embedded text layer is bypassed entirely.
+
+### Engine selection
+
+`engine="auto"` picks the best engine that is _actually installed and usable here_, not
+the best one on paper. An explicitly requested engine that cannot run degrades to
+EasyOCR and says why on stderr, rather than failing — a bare converter with no OCR
+engine recognises no Devanagari and silently returns empty pages.
+
+### Backlog reality
+
+Around four in five queued documents point at a municipal host that no longer
+responds. `sweep.py` exists for that: it probes with short timeouts, reports by host
+and reason, and only writes `skipped` with `--mark`. It guards on `ocr_status =
+'pending'`, so it can never overwrite a result or stomp a document a worker is holding.
 
 ---
 
@@ -251,10 +348,39 @@ Workspace-specific modules:
 
 ## Configuration
 
-| Variable             | Purpose                                                                  |
-| :------------------- | :----------------------------------------------------------------------- |
-| `DATABASE_URL`       | PostgreSQL connection string. Required at import time by the loader      |
-| `SCRAPER_PAGINATION` | `true` walks past the first listing page on every route; default `false` |
-| `NODE_ENV`           | `production` refuses the scraper workspace; unset serves it on a machine |
+| Variable                              | Purpose                                                                    |
+| :------------------------------------ | :------------------------------------------------------------------------- |
+| `DATABASE_URL`                        | PostgreSQL connection string. Required at import time by the loader        |
+| `SCRAPER_PAGINATION`                  | `true` walks past the first listing page on every route; default `false`   |
+| `NODE_ENV`                            | `production` refuses the scraper workspace; unset serves it on a machine   |
+| `ENABLE_AUTO_OCR`                     | `true` queues documents as the ETL writes them; default `false`            |
+| `REDIS_URL`                           | Where the OCR job queue is. Must match the OCR service's view of it        |
+| `OCR_QUEUE_NAME`                      | The Redis list jobs travel on; defaults to `ocr:jobs`                      |
+| `OCR_EVENTS_CHANNEL`                  | Pub/sub channel the worker announces `job_started`/`completed`/`failed` on |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB` | Required by `docker-compose.yml`, with no defaults                         |
 
 Copy `.env.example` to `.env` and adjust. When starting the API, Crawlee's storage directory is pointed at the repository's `storage/` unless `CRAWLEE_STORAGE_DIR` is already set.
+
+---
+
+## Containers
+
+Two images, because the two halves of the stack have nothing else in common.
+
+**`Dockerfile.ocr`** — the OCR service. Python 3.13, CPU by default, running as an
+unprivileged user with the model caches on a `/models` volume. `WITH_PADDLE=1` and
+`WITH_SURYA=1` add the optional engines. Its `HEALTHCHECK` calls `/health`, which
+checks Redis and Postgres for real rather than just reporting that the process is
+alive.
+
+**`Dockerfile`** — the scraper and web workspace. Chromium and its shared libraries are
+installed here because `playwright` being present as a dependency does not install a
+browser; without this the crawler fails every request with a missing-library error.
+
+`docker-compose.yml` runs Postgres, Redis and the OCR service by default, and keeps the
+scraper behind a `profiles` entry so `docker compose up` gives you the durable stack
+rather than a batch job that has nothing to do until you ask for it.
+
+The published host ports are all overridable. The defaults `5432` and `6379` collide
+with any Postgres or Redis already running on the machine, which is why `docker compose
+up` fails outright on a developer laptop that already has both.
