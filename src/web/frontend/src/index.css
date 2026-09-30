@@ -1,71 +1,77 @@
 :root {
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #1b2a24;
-  background: #f3f6f2;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    font-family:
+        Inter,
+        ui-sans-serif,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    color: #1b2a24;
+    background: #f3f6f2;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 * {
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 html {
-  min-width: 320px;
-  background: #f3f6f2;
+    min-width: 320px;
+    background: #f3f6f2;
 }
 
 body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
 }
 
 button,
 input,
 select,
 textarea {
-  font: inherit;
+    font: inherit;
 }
 
 button,
 a,
 select {
-  -webkit-tap-highlight-color: transparent;
+    -webkit-tap-highlight-color: transparent;
 }
 
 button {
-  border: 0;
+    border: 0;
 }
 
 a {
-  color: inherit;
+    color: inherit;
 }
 
 img,
 svg {
-  display: block;
+    display: block;
 }
 
 #root {
-  min-height: 100vh;
+    min-height: 100vh;
 }
 
 ::selection {
-  color: #ffffff;
-  background: #28634d;
+    color: #ffffff;
+    background: #28634d;
 }
 
 .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
