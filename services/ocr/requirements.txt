@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# Python version
+#
+#   Requires Python 3.10 - 3.13.   Recommended: 3.13
+#
+# Python 3.14 is NOT supported: PaddlePaddle publishes no cp314 wheel, and the
+# newest Pillow below Surya's <11 pin is 10.4.0, which stops at cp313. On 3.14
+# only EasyOCR is available.
+#
+# Setup with mise:
+#   mise use python@3.13
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+# ---------------------------------------------------------------------------
+
+# Core — always installed, works on every supported interpreter.
+docling[easyocr]>=2.28.0
+
+# ---------------------------------------------------------------------------
+# Optional engines — NOT hard requirements.
+#
+# Both have prerequisites beyond a plain wheel, and listing them here would
+# make `pip install -r requirements.txt` fail on interpreters that lack them.
+# They are auto-detected at runtime; anything unusable is reported on startup
+# with the reason, and the tool falls back to EasyOCR.
+#
+# PaddleOCR  (verified on Python 3.13 with paddlepaddle 3.3.1 / paddleocr 3.7.0)
+#   pip install paddlepaddle paddleocr
+#   Requires AVX-512. PaddlePaddle's oneDNN kernels fail at the first
+#   inference on AVX2-only CPUs, so the engine is reported as unavailable there.
+#
+# SuryaOCR  (verified on Python 3.13 with surya-ocr 0.22.1)
+#   pip install surya-ocr
+#   Current releases delegate inference to an external backend, so the wheel
+#   alone is not enough. Pick one:
+#     CPU : install llama-server, then  export SURYA_INFERENCE_BACKEND=llamacpp
+#     GPU : vLLM via Docker with the NVIDIA runtime configured
+#   Without a backend the package imports fine and the first OCR call fails.
+# ---------------------------------------------------------------------------
+
+
+# Pipeline integration & database dependencies
+redis>=5.0.0
+psycopg[binary]>=3.2.0
+flask>=3.0.0
+python-dotenv>=1.0.0
+
+# The worker downloads each document with requests, and ocr/pipeline.py renders
+# PDF pages to images with pypdfium2 to sidestep the broken font encodings in
+# these government PDFs. Both were previously only reachable as transitive
+# dependencies of docling, which is not something to rely on.
+requests>=2.31.0
+pypdfium2>=4.30.0
+

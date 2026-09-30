@@ -86,6 +86,8 @@ function buildDocumentUpsertQuery(docs?: DocumentData[]) {
                 storagePath: doc.storagePath,
                 downloadStatus: doc.downloadStatus ?? "pending",
                 downloadError: doc.downloadError ?? null,
+                ocrStatus: doc.ocrStatus ?? "pending",
+                ocrData: doc.ocrData ?? null,
             },
         })),
     };
@@ -141,6 +143,7 @@ export async function upsertPolicyEntity(data: PolicyEntityData): Promise<{ adde
             publishedDate: entityFields.publishedDate,
             metadata: entityFields.metadata,
             municipalityId: municipality.id,
+            documents: buildDocumentUpsertQuery(documents),
         },
         create: {
             ...entityFields,
@@ -215,5 +218,36 @@ export async function loadEtlData(
         }
     }
 
+    // 4. Optionally hand this load's documents to the OCR queue.
+    //
+    // This runs once per ETL load and the pipeline loads one page at a time, so
+    // it is called many times per scrape. It therefore queues by the URLs this
+    // payload wrote rather than sweeping the municipality backlog, which is what
+    // made a single run queue the same documents once per page.
+    if (process.env.ENABLE_AUTO_OCR === "true") {
+        const writtenUrls = collectDocumentUrls(payload);
+        if (writtenUrls.length > 0) {
+            try {
+                const { enqueuePendingDocuments } = await import("../queue/ocr-producer.js");
+                await enqueuePendingDocuments({ originalUrls: writtenUrls });
+            } catch (queueErr: any) {
+                console.warn(`[loader] Auto-enqueue OCR warning: ${queueErr.message}`);
+            }
+        }
+    }
+
     return { itemsAdded, itemsUpdated };
+}
+
+/** The distinct original URLs of every document in the payload. */
+function collectDocumentUrls(payload: EtlPayload): string[] {
+    const urls = new Set<string>();
+    for (const entity of payload.policyEntities ?? []) {
+        for (const doc of entity.documents ?? []) {
+            if (doc.originalUrl) {
+                urls.add(doc.originalUrl);
+            }
+        }
+    }
+    return [...urls];
 }

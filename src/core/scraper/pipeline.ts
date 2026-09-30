@@ -135,6 +135,17 @@ export async function runScraperPipeline(
             itemsUpdated: summary.itemsUpdated,
             error: summary.error,
         });
+
+        // Loading may have opened the OCR queue connection (ENABLE_AUTO_OCR).
+        // This is the one exit point every scraper run passes through -- the CLI
+        // spawns each scraper as its own process and the workspace runs them in
+        // background tasks -- so releasing it here stops both from hanging on a
+        // live socket after the run has finished. Imported lazily so a scraper
+        // that never touches the queue does not load the Redis client at all.
+        if (process.env.ENABLE_AUTO_OCR === "true") {
+            const { closeRedisClient } = await import("../queue/redis.js");
+            await closeRedisClient().catch(() => {});
+        }
     }
 
     return summary;
