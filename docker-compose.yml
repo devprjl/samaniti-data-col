@@ -1,0 +1,117 @@
+# Local and single-host deployment of the whole stack.
+#
+#   docker compose up -d                      # postgres, redis, ocr service
+#   docker compose --profile scraper up -d    # ...and the scraper/web image
+#   docker compose --profile scraper run --rm app npm run scraper
+#
+# Everything is published on a host port that can be overridden, because the
+# defaults 5432 and 6379 collide with any Postgres or Redis already running on
+# the machine. Copy .env.example to .env and set the values there.
+
+name: samaniti-data-col
+
+x-ocr-image: &ocr-image
+    build:
+        context: .
+        dockerfile: Dockerfile.ocr
+    image: samaniti-ocr:latest
+
+services:
+    postgres:
+        image: postgres:18-alpine
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+            POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+        ports:
+            - "${POSTGRES_PORT:-5432}:5432"
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    redis:
+        image: redis:alpine
+        restart: unless-stopped
+        ports:
+            - "${REDIS_PORT:-6379}:6379"
+        volumes:
+            - redisdata:/data
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    ocr-service:
+        <<: *ocr-image
+        container_name: samaniti-ocr-service
+        restart: unless-stopped
+        environment:
+            DATABASE_URL: >-
+                postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+            REDIS_URL: redis://redis:6379/0
+            OCR_QUEUE_NAME: ocr:jobs
+            OCR_EVENTS_CHANNEL: ocr:events
+            # The worker runs inside the API process so a single container is the whole
+            # service. Set to false and scale worker replicas instead when the CPU is
+            # the limit: two workers on two cores are slower than one, not faster.
+            RUN_WORKER_IN_PROCESS: "true"
+            PORT: "5050"
+        ports:
+            - "${OCR_PORT:-5050}:5050"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        # Model weights are ~2GB and are re-downloaded on every image rebuild
+        # otherwise.
+        volumes:
+            - ocrmodels:/models
+        deploy:
+            resources:
+                limits:
+                    # docling holds every page of a document in memory as a rendered
+                    # image, so the ceiling matters more than the average.
+                    memory: ${OCR_MEMORY_LIMIT:-4g}
+
+    # Opt-in. The scraper is a batch job, not a service: bring it up when you want
+    # to crawl, run a scrape, and stop it again. It needs Chromium, which is why it
+    # is a separate image from the OCR service.
+    app:
+        profiles: ["scraper"]
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: samaniti-app:latest
+        container_name: samaniti-app
+        environment:
+            DATABASE_URL: >-
+                postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+            REDIS_URL: redis://redis:6379/0
+            ENABLE_AUTO_OCR: "true"
+            SCRAPER_PAGINATION: ${SCRAPER_PAGINATION:-false}
+            NODE_ENV: ${NODE_ENV:-development}
+        ports:
+            - "${API_PORT:-5001}:5001"
+            - "${WEB_PORT:-5173}:5173"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        volumes:
+            # Crawlee keeps request queues and key-value stores on disk so an
+            # interrupted crawl can be inspected.
+            - crawlerstate:/app/storage
+
+volumes:
+    pgdata:
+    redisdata:
+    ocrmodels:
+    crawlerstate:

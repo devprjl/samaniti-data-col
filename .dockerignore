@@ -1,0 +1,62 @@
+# Keep the build context small and the image reproducible.
+#
+# The build context is the whole repository, so anything listed here never
+# reaches the daemon. Two rules make the difference between a working and a
+# failing build:
+#
+#   1. Never exclude a file a Dockerfile COPYs. A COPY of a path that the
+#      ignore rules removed fails the build outright, it does not copy an empty
+#      file. package-lock.json must stay: both images run `npm ci`, which refuses
+#      to resolve without it and would otherwise install whatever versions the
+#      registry serves that day.
+#   2. Never ship local state or secrets into an image.
+
+# ---------------------------------------------------------------------------
+# Version control and editor state
+# ---------------------------------------------------------------------------
+.git/
+.gitignore
+.claude/
+.husky/
+.idea/
+.vscode/
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
+# node_modules is reinstalled by `npm ci` and would only invalidate the cache.
+# dist is rebuilt by `npm run build`.
+node_modules/
+dist/
+**/node_modules/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+services/ocr/.venv
+services/ocr/venv
+services/ocr/.cache
+services/ocr/output
+services/ocr/.ruff_cache
+services/ocr/.mypy_cache
+services/ocr/.pytest_cache
+services/ocr/*.egg-info
+**/__pycache__/
+**/*.py[cod]
+
+# ---------------------------------------------------------------------------
+# Runtime state, logs and secrets
+#
+# .env is how the developer configures a local machine. Deployments inject the
+# same values as environment variables, and baking a file with a database
+# password into an image layer would be a leak that outlives the container.
+# ---------------------------------------------------------------------------
+.env
+.env.*.local
+**/.env
+**/.env.local
+
+storage/
+data/
+uploads/
+*.log

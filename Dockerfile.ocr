@@ -1,0 +1,94 @@
+# syntax=docker/dockerfile:1
+#
+# OCR service image.
+#
+# Builds the Python side of the stack: the Flask API and, optionally, the queue
+# worker in the same process. The image is CPU-only by default, which is the
+# right target for this workload -- measured throughput on 8 cores is roughly 15
+# pages an hour, so a GPU only pays for itself on a large backfill.
+#
+# Build:
+#   docker build -f Dockerfile.ocr -t samaniti-ocr .
+#   docker build -f Dockerfile.ocr --build-arg WITH_PADDLE=1 --build-arg WITH_SURYA=1 -t samaniti-ocr-full .
+#
+# Note that the build context is the repository root even though only services/ocr
+# is copied in, so .dockerignore has to keep package-lock.json: excluding a file a
+# COPY names fails the build outright.
+
+ARG PYTHON_VERSION=3.13
+FROM python:${PYTHON_VERSION}-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Model and document caches live on a volume so a rebuild does not re-download
+# several gigabytes of weights. The directories are created here, before the
+# VOLUME instruction below, because an anonymous volume inherits whatever the
+# image had at that exact path -- declaring the mount first would leave them
+# missing, and the first Hugging Face write would fail.
+ENV HF_HOME=/models/hf \
+    DOCLING_CACHE=/models/docling \
+    TORCH_HOME=/models/torch \
+    XDG_CACHE_HOME=/models/cache
+RUN mkdir -p /models/hf /models/docling /models/torch /models/cache
+
+# libgl1 and libglib2.0-0 are OpenCV's runtime, which easyocr imports at module
+# level; without them the worker dies on the first import rather than at
+# inference. curl is used by the healthcheck below.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependencies first, so editing application code does not reinstall torch.
+# pyproject.toml and README.md come along because the package metadata points at
+# the README and the editable install below needs both.
+COPY services/ocr/requirements.txt services/ocr/pyproject.toml ./
+COPY services/ocr/README.md ./
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
+
+# Optional engines. Off by default: each is a large native install, and the
+# service reports at startup which engines it can actually use and falls back to
+# EasyOCR when an engine is unavailable.
+ARG WITH_PADDLE=0
+ARG WITH_SURYA=0
+RUN set -eux; \
+    if [ "$WITH_PADDLE" = "1" ]; then \
+        pip install paddlepaddle && pip install paddleocr; \
+    fi; \
+    if [ "$WITH_SURYA" = "1" ]; then \
+        pip install surya-ocr; \
+    fi; \
+    python -c "import docling; print('docling import OK')"
+
+COPY services/ocr/settings.py services/ocr/db.py ./
+COPY services/ocr/main.py services/ocr/worker.py services/ocr/server.py ./
+COPY services/ocr/ocr ./ocr
+
+# Installed only once the sources are in place: setuptools needs main.py and the
+# ocr package to exist before it will build the distribution metadata, so doing
+# this earlier fails the build. --no-deps because requirements.txt above is
+# already the authoritative dependency list, and resolving again would be slow
+# and could pull a different version than the tested one.
+RUN pip install --no-deps -e .
+
+# Unprivileged: nothing here needs root, and a container that gets a shell
+# should not be root by default.
+RUN useradd --create-home --uid 10001 ocr \
+    && chown -R ocr:ocr /app /models
+USER ocr
+
+EXPOSE 5050
+
+# Checks Redis and the database for real, not just that the process is alive, so
+# an orchestrator restarts this container when a dependency is unreachable.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -fsS http://localhost:5050/health || exit 1
+
+CMD ["python", "server.py", "--with-worker"]
