@@ -78,7 +78,8 @@ Both the root and the API execute TypeScript through `tsx` at runtime; `tsc` is 
 samaniti-data-col/
 ├── docs/
 │   ├── project-structure.md        # This guide
-│   └── etl-pipeline-guide.md       # ETL lifecycle walkthrough
+│   ├── scraper-pipeline-guide.md   # How the scraper works, end to end
+│   └── ocr-pipeline-guide.md       # How a document becomes readable text, end to end
 ├── prisma/
 │   ├── schema.prisma               # Municipality, Profile, PolicyEntity, Document, ScraperRun
 │   └── migrations/                 # SQL migration history
@@ -96,10 +97,9 @@ samaniti-data-col/
 │       ├── settings.py             # .env discovery and required-variable lookup
 │       ├── db.py                   # psycopg access and the atomic "claim" documents
 │       └── ocr/                    # The conversion package
-│           ├── config.py           # Engine registry, hardware profiling, engine selection
-│           ├── pipeline.py         # docling converter factory and the render-to-image path
-│           ├── utils.py            # Filename sanitization and model cache lookup
-│           └── engines/            # PaddleOCR and SuryaOCR as native docling engines
+│           ├── config.py           # Languages, and which device to run on
+│           ├── pipeline.py         # The three conversion steps: PDF to image, EasyOCR, docling
+│           └── utils.py            # Filename sanitization for downloaded files
 ├── src/
 │   ├── core/
 │   │   ├── constants/
@@ -241,6 +241,18 @@ Two lifecycle rules the producers depend on:
 - **Documents that are already `queued` or `processing` are never re-selected**, so
   `enqueuePendingDocuments` is safe to call from the load path.
 
+A batch size of `null` drops the `LIMIT` clause entirely and claims the whole eligible
+backlog — one atomic statement, so the unbounded form is no less safe than a bounded
+one. It is what the OCR workspace's "enqueue all" control sends, which is why
+`OCR_ENQUEUE_MAX` only guards the explicit-limit path.
+
+The claim and the push are two steps, so a Redis outage between them would leave
+documents marked `queued` that no job exists for. The producer reads the per-command
+errors out of `pipeline.exec()` — which resolves with `[error, result]` pairs rather
+than rejecting — and puts the claim back exactly as it was, per prior status, so a
+batch reclaimed from a half-finished `processing` run is not downgraded to `pending`.
+The stale-queued reclaim is the safety net; the rollback is the fix.
+
 ---
 
 ## OCR Service (`services/ocr/`)
@@ -257,9 +269,8 @@ needs Python 3.13 and several gigabytes of native ML dependencies.
 | `worker.py`       | `BRPOP` consumer; downloads, converts, writes the result                                                         |
 | `main.py`         | CLI for converting a single document                                                                             |
 | `sweep.py`        | Backlog triage: finds documents whose host no longer answers                                                     |
-| `ocr/config.py`   | Engine registry, hardware profiling, engine selection and fallbacks                                              |
+| `ocr/config.py`   | Languages to read, and whether to use a GPU or the CPU                                                           |
 | `ocr/pipeline.py` | Builds the docling converter; renders PDF pages to images                                                        |
-| `ocr/engines/`    | PaddleOCR and SuryaOCR as native docling OCR engines                                                             |
 
 ### Why pages are rendered before conversion
 
@@ -268,12 +279,13 @@ decodes to garbled ASCII, which then misleads docling's table cell matching. So
 `convert_document` rasterises each page to a PNG with `pypdfium2` first and runs
 recognition on the pixels. The embedded text layer is bypassed entirely.
 
-### Engine selection
+### One OCR engine, two jobs
 
-`engine="auto"` picks the best engine that is _actually installed and usable here_, not
-the best one on paper. An explicitly requested engine that cannot run degrades to
-EasyOCR and says why on stderr, rather than failing — a bare converter with no OCR
-engine recognises no Devanagari and silently returns empty pages.
+EasyOCR reads the words off each page image; docling does everything around that —
+page layout, reading order, and table reconstruction through TableFormer. Neither
+duplicates the other, which is why both are in the pipeline. There is no engine
+selection at runtime: `docling[easyocr]` is the only dependency, so there is
+nothing to choose and nothing that can be misconfigured.
 
 ### Backlog reality
 
@@ -324,23 +336,42 @@ The `workspace/` sub-router is mounted at `/api/workspace` and provides:
 | `job-store.js`       | In-memory registry of runs: creation, log buffering (400 lines), status transitions, pruning to the 25 most recent, and the single-active-run guard. |
 | `console-capture.js` | Temporarily replaces `console.log/warn/error` for the duration of a run so the same output reaches both the terminal and the job's log buffer.       |
 
+Scraper routes: `GET /routes`, `POST /runs`, `GET /runs`, `GET /runs/:id`.
+
+OCR routes: `GET /ocr/status` reports the counts per `ocr_status`, the same pending
+counts broken down by municipality, and the depth of the Redis job list. `GET
+/ocr/documents?limit=&municipalityCode=` lists the documents the next enqueue would
+take, in claim order, with their source URLs — a preview that claims nothing, so the
+files can be opened and judged before a batch is committed. It answers with `total`
+alongside the rows so the UI can say "first 50 of 3,475" instead of implying the scope
+is fifty documents long. `POST /ocr/enqueue` takes `{ limit, municipalityCode }` for a
+fixed batch or `{ all: true }` to sweep the whole eligible backlog, and answers with a
+fresh snapshot plus the exact documents it queued, read from the claim rather than
+re-read afterwards. `limit` is clamped to `OCR_ENQUEUE_MAX` rather than trusted, and a
+value that is not a number is a `400` instead of a `NaN` reaching the `LIMIT` clause.
+
 Run state is deliberately not persisted: `scraper_runs` already holds the durable telemetry, and the buffer only needs to outlive a single run.
 
 ### Frontend (`src/web/frontend`)
 
 React 19 with Vite on port `5173`. The dashboard keeps its own small router in `lib/router.js` and loads all portal data once in `App.jsx`.
 
-Pages: `OverviewPage`, `DirectoryPage`, `MunicipalityPage`, `PolicyDetailPage`, `ActivityPage`, `RunDetailPage`, `MethodologyPage` and `WorkspacePage`.
+Pages: `OverviewPage`, `DirectoryPage`, `MunicipalityPage`, `PolicyDetailPage`, `ActivityPage`, `RunDetailPage`, `MethodologyPage`, `WorkspacePage` and `OcrWorkspacePage`.
 
 Workspace-specific modules:
 
-| Module                                | Responsibility                                                                          |
-| :------------------------------------ | :-------------------------------------------------------------------------------------- |
-| `pages/WorkspacePage.jsx`             | URL-driven state (`/workspace/<province>/<municipality>/<route>`), run polling, filters |
-| `lib/workspace.js`                    | Route grouping, record-to-route matching, config snippet and clipboard helpers          |
-| `components/RouteConfigInspector.jsx` | Renders a route's extraction configuration with copy controls                           |
-| `components/RunLog.jsx`               | The live console panel, run metrics and status                                          |
-| `components/CopyButton.jsx`           | Clipboard access with a fallback for browsers without the async clipboard API           |
+| Module                                | Responsibility                                                                                                    |
+| :------------------------------------ | :---------------------------------------------------------------------------------------------------------------- |
+| `pages/WorkspacePage.jsx`             | URL-driven state (`/workspace/<province>/<municipality>/<route>`), run polling, filters                           |
+| `pages/OcrWorkspacePage.jsx`          | OCR backlog, batch-size and enqueue-all controls, the preview of what a batch would take, and the enqueue history |
+| `lib/workspace.js`                    | Route grouping, record-to-route matching, config snippet and clipboard helpers                                    |
+| `components/RouteConfigInspector.jsx` | Renders a route's extraction configuration with copy controls                                                     |
+| `components/RunLog.jsx`               | The live console panel, run metrics and status                                                                    |
+| `components/CopyButton.jsx`           | Clipboard access with a fallback for browsers without the async clipboard API                                     |
+
+`Primitives.jsx` holds the shared vocabulary both workspaces are built from, including
+`ActionButton`, which turns into the spinner for the request it started so only the
+control that is actually busy reports progress.
 
 `App.css` holds the design tokens (`:root` custom properties) and every component style, including the workspace layout, which collapses to a single column at narrower widths.
 
@@ -368,10 +399,9 @@ Copy `.env.example` to `.env` and adjust. When starting the API, Crawlee's stora
 Two images, because the two halves of the stack have nothing else in common.
 
 **`Dockerfile.ocr`** — the OCR service. Python 3.13, CPU by default, running as an
-unprivileged user with the model caches on a `/models` volume. `WITH_PADDLE=1` and
-`WITH_SURYA=1` add the optional engines. Its `HEALTHCHECK` calls `/health`, which
-checks Redis and Postgres for real rather than just reporting that the process is
-alive.
+unprivileged user with the model caches on a `/models` volume. Its `HEALTHCHECK`
+calls `/health`, which checks Redis and Postgres for real rather than just reporting
+that the process is alive.
 
 **`Dockerfile`** — the scraper and web workspace. Chromium and its shared libraries are
 installed here because `playwright` being present as a dependency does not install a

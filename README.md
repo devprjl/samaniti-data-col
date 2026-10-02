@@ -98,8 +98,8 @@ That brings up three containers. The OCR service answers on http://localhost:505
 `GET /health` reports whether it can actually reach Redis and the database rather than
 just whether the process is alive.
 
-The scraper is not part of that stack on purpose. It is a batch job, so it gets its own
-image — Chromium and all — which you start when you want to crawl:
+The scraper is not part of that stack. It is a batch job, so it gets its own image —
+Chromium and all — which you start when you want to crawl:
 
 ```bash
 docker compose --profile scraper run --rm app npm run scraper lumbini:banganga
@@ -107,6 +107,9 @@ docker compose --profile scraper run --rm app npm run scraper lumbini:banganga
 
 A CPU machine is enough. One page takes about a minute on eight cores, so the whole
 reachable backlog is a day of compute rather than something that needs a GPU.
+
+How any of this actually works is in the
+[OCR pipeline guide](docs/ocr-pipeline-guide.md).
 
 ---
 
@@ -142,20 +145,14 @@ to the end of the URL.
 
 ## Running a scraper
 
-From the command line, on your machine:
-
 ```bash
 npm run scraper                    # every municipality in both provinces
 npm run scraper madhesh            # every municipality in one province
 npm run scraper lumbini:banganga   # one municipality
 ```
 
-The scraper prints what it finds as it goes, and a summary at the end. Every run is
-also recorded in the database, which is where the site's "Collection activity" page
-gets its data.
-
-Records land in your database straight away — run a scraper and refresh the website
-to see them.
+How the scraper works, stage by stage, is in the
+[scraper pipeline guide](docs/scraper-pipeline-guide.md).
 
 ---
 
@@ -170,39 +167,21 @@ and writes the text back into `documents.ocr_data`. Neither side talks to the ot
 directly, so the scraper never waits on a conversion and the conversion never fails a
 scrape.
 
-To try it, first send a backlog of documents to the queue:
-
 ```bash
-npm run ocr:enqueue -- --limit 100
+npm run ocr:enqueue -- --limit 100   # fill the queue, once
+npm run ocr:worker                    # convert, until you stop it
 ```
 
-Then run the worker, which converts them one at a time:
+`npm run dev` runs the web app and the worker together. The same queue can be filled
+and watched from the **OCR workspace** page in development.
 
-```bash
-npm run ocr:worker
-```
+The queue converts the shortest documents first, so a one-page notice is not left
+waiting behind a long gazette. The OCR is EasyOCR and Docling; there is nothing to
+choose or configure.
 
-Each document takes minutes, so leave it running. To use a different engine than the
-one it picks for itself, `--engine easyocr`, `--engine paddleocr` or `--engine suryaocr`.
-
-### Most of the backlog cannot be read
-
-This is worth knowing before you queue anything. Around four documents in five point
-at a municipal website that no longer answers — these are small portals, and some were
-decommissioned and never came back. No amount of computing reads a file from a server
-that is not there.
-
-There is a tool for finding them:
-
-```bash
-npm run ocr:sweep:stats              # what is in the backlog
-npm run ocr:sweep -- --limit 500     # report what cannot be fetched
-npm run ocr:sweep -- --limit 500 --mark   # and mark those documents skipped
-```
-
-It reports first and only writes with `--mark`, and the reason is recorded on each
-document. It never touches a document that already has OCR text, and it never overwrites
-a document a worker is holding.
+Everything else — why the queue exists, how the ordering works, and what to do when a
+document's website has disappeared — is in the
+[OCR pipeline guide](docs/ocr-pipeline-guide.md).
 
 ---
 
@@ -223,10 +202,11 @@ The website is read-only. It has a few pages:
 
 - [Project structure and architecture](docs/project-structure.md) — what each folder
   is for and how the pieces fit together
-- [ETL pipeline guide](docs/etl-pipeline-guide.md) — how a page on a government
-  website becomes a row in the database, step by step
-- [OCR service](services/ocr/README.md) — the engines it can use, and how the queue
-  works
+- [Scraper pipeline guide](docs/scraper-pipeline-guide.md) — how a page on a
+  government website becomes a row in the database, step by step
+- [OCR pipeline guide](docs/ocr-pipeline-guide.md) — how a stored document becomes
+  readable text, and how the queue orders that work
+- [OCR service](services/ocr/README.md) — the service itself, file by file
 
 ---
 

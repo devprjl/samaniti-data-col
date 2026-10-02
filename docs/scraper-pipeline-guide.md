@@ -1,6 +1,41 @@
-# Comprehensive ETL Pipeline Guide
+# Scraper Pipeline Guide
 
-How data moves through the Samaniti ETL pipeline — from HTTP requests and DOM extraction, through document normalization and high-resolution media recovery, to database persistence and telemetry.
+How the scraper works, end to end — from HTTP requests and DOM extraction, through
+document normalization and high-resolution media recovery, to database persistence
+and telemetry.
+
+This guide covers the scraper only. OCR reads the documents the scraper collects
+and is a separate process with its own queue; that is
+[the OCR pipeline guide](ocr-pipeline-guide.md).
+
+---
+
+## Running it
+
+From the command line, on your machine:
+
+```bash
+npm run scraper                    # every municipality in both provinces
+npm run scraper madhesh            # every municipality in one province
+npm run scraper lumbini:banganga   # one municipality
+```
+
+The scraper prints what it finds as it goes, and a summary at the end. Every run is
+also recorded in the database, which is where the site's "Collection activity" page
+gets its data.
+
+Records land in the database straight away — run a scraper and refresh the website
+to see them.
+
+In a container, the scraper is a batch job and gets its own image with Chromium in
+it, which you start when you want to crawl:
+
+```bash
+docker compose --profile scraper run --rm app npm run scraper lumbini:banganga
+```
+
+Scraping is disabled on the live site: `NODE_ENV=production` turns the workspace
+router off, so nobody can start a crawl from the public site.
 
 ---
 
@@ -160,6 +195,160 @@ Writes go through Prisma against PostgreSQL:
 1. **Municipality upsert** — by unique `code` (e.g. `BARDAGHAT`). Note this is the code from `transform.ts`, which does not always match the folder name (`harion-mun` is `HARIWON`).
 2. **Policy upsert** — matched on the unique `sourceUrl`; the loader first checks existence so it can report added versus updated.
 3. **Document linking** — `connectOrCreate` on the unique `originalUrl`, with in-payload deduplication to avoid unique-constraint clashes.
+4. **Document metadata** — the page-count probe's result, when there is one. See below.
+
+---
+
+## Document metadata and page counts
+
+Every document is a row in `documents`, and `documents.metadata` is a `JSONB`
+column holding facts about the file itself. Today it carries the page count, which
+the OCR queue sorts by — see
+[the OCR pipeline guide](ocr-pipeline-guide.md#shortest-documents-are-converted-first)
+for why that ordering exists.
+
+The scraper is where the count is learned, because it is the only moment the
+document is known to exist.
+
+### One way to build a document
+
+Documents are discovered in two ways, but they are constructed in exactly one place.
+
+`extractDocumentLinks` in `utils/html.ts` scans a page's markup for links to files —
+anchors, `<object>`, `<embed>`, `<img>`, and the JavaScript that configures a DFlip
+flipbook. It applies the ignore-list (Adobe Reader downloaders, logos, icons),
+recovers full-resolution image URLs, derives a readable filename from the link text,
+and de-duplicates by URL. This is what routes use.
+
+`buildDocument` in `utils/document.ts` covers the one case the scanner cannot: a page
+that _is_ the document, such as a detail page served straight as a PDF. There is no
+link on the page pointing at the page, so nothing to scan for.
+
+Both call `createDocument`, which is the only function that builds a `DocumentData`.
+That matters because the two used to be separate implementations that had drifted:
+one wrote `fileType` as a MIME type and the other as a bare extension, and one wrote
+`downloadStatus: "pending"` while the other wrote `"skipped"`. The same file scraped
+by two municipalities produced two different rows. They now agree by construction.
+
+### What makes a document the same document
+
+**The source URL, and nothing else.** Not the filename, not the title.
+
+That is enforced in four places, all keyed on the same normalised URL — absolute,
+no query string, no fragment:
+
+1. **Within one page**, `extractDocumentLinks` holds documents in a `Map` keyed by
+   the document's own `originalUrl`. A link to the same file appearing in three
+   places on a page is one document.
+2. **Within one transform's payload**, the loader de-duplicates by `originalUrl`
+   before writing, so a listing row and its detail page do not double up.
+3. **In the database**, `documents.original_url` carries a `UNIQUE` constraint. This
+   is the real guarantee; the two above are just cheaper than catching it here.
+4. **Across runs**, the write is an upsert on that same column, so re-scraping a
+   page updates its documents rather than adding more.
+
+The filename is never a key, and cannot be. In this collection **22 filenames are
+each shared by more than one distinct URL** — municipal portals publish
+`5.pdf`, `6.pdf`, `notice.pdf` and similar repeatedly, often for entirely different
+documents. Keying on the filename would have merged those into one.
+
+Normalising the URL before using it as a key is what makes `?download=1` and the bare
+URL the same document. It also means a portal that changes its link format does not
+silently create a second row for a file already collected — and, correspondingly,
+that the URL stored is not always byte-identical to the one in the markup.
+
+### How a page count is read without downloading the file
+
+`probePdfMetadata` in `src/core/utils/pdf-metadata.ts` reads a PDF's `/Count`
+entry — the page tree's own statement of how many pages it has — out of two small
+ranged requests rather than downloading the whole document. A few hundred
+kilobytes instead of the tens of megabytes a full fetch would cost.
+
+Three branches, in order of how cheap they are:
+
+1. **An image is one page.** Checked from the URL's extension with no network call
+   at all. About 8% of this collection is a bare `.jpg` or `.png`, and those
+   documents are the cheapest in the backlog, so this is the highest-value branch
+   and the only free one.
+2. **The `HEAD` response says it is an image.** Needed because roughly a third of
+   these files have no useful extension — many are named after their Nepali title —
+   so an image among them is invisible until something says so. `HEAD` also yields
+   the file size.
+3. **Two ranged reads.** The first 256KB, then the last 256KB if that found
+   nothing. The head is tried first because measured against these documents
+   `/Count` is always in the opening window and never in the tail, so the common
+   case costs one request.
+
+### The field that matters more than the page count
+
+`metadata.reachable` records whether the file answered **at all**, which is a
+different question from whether its page tree could be parsed:
+
+| Outcome                              | Meaning                                         | What happens to it                                                                                 |
+| :----------------------------------- | :---------------------------------------------- | :------------------------------------------------------------------------------------------------- |
+| `reachable: true`, `pageCount: 3`    | Measured                                        | Queued, sorted at its true cost                                                                    |
+| `reachable: true`, `pageCount: null` | Answered, but `/Count` was outside both windows | Queued, sorted last; the OCR worker measures it exactly once it has the file                       |
+| `reachable: false`                   | Host is gone, or the file is not there          | Never queued — the download would fail too. `npm run ocr:sweep -- unreachable` marks these skipped |
+
+Without that field the two failure modes are indistinguishable, and a queue that
+treats "unknown" as "reachable" spends its time re-failing downloads of documents
+whose hosts died months ago.
+
+A page count is **never guessed**. A wrong count is worse than no count, because
+the queue would then be ordering on a number nobody can trust.
+
+### Why the timeouts are long
+
+These are small municipal portals on slow connections. Measured against live
+documents from this collection, a single `HEAD` regularly takes 7–20 seconds. At an
+8-second timeout the probe failed on twelve of twelve real documents; at 30 seconds
+it read almost all of them. A timeout tuned to a data centre would report most of
+the backlog as unmeasurable and silently disable the ordering it exists to provide.
+
+### Where the measurement happens
+
+Not in the document builders — both are synchronous and cheap, and a probe is
+neither. It happens once, in the pipeline, on the way to the database:
+`resolveDocumentMetadata` in `utils/pdf-metadata.ts`, called between `transform()`
+and `load()` in `core/scraper/pipeline.ts`. Every document passes through that one
+point, so a route added later is measured without anyone remembering to.
+
+It costs a round trip per document to a municipal server that takes 7–20 seconds to
+answer, so it is I/O wait rather than CPU, and it can be turned off with
+`OCR_PROBE_DURING_SCRAPE=false` for crawls where that wait is unwelcome. Documents
+written without a count are not lost either way: the OCR queue probes anything
+unmeasured before it claims it.
+
+### Writing it back on a re-scrape
+
+This is the part that is easy to get wrong, and it was. Prisma's `connectOrCreate`
+only runs its `create` branch on first insert and cannot update an existing row, so a
+measurement would be written once and then frozen — a portal that replaced a long PDF
+with a one-page notice would keep being costed as a long document forever. Since
+these documents are re-scraped routinely, that mattered.
+
+So `refreshDocumentMetadata` runs a second pass after the upsert, and only for
+probes that actually measured something. A probe that found the host gone records
+`reachable: false`, and that deliberately does **not** overwrite a page count an
+earlier scrape established: portals go down, and a document would otherwise lose its
+count because its server was unreachable today.
+
+### Re-running the scraper
+
+Nothing here is one-shot. Re-running a scraper re-probes every document it finds
+and rewrites `metadata`, so a portal that has come back to life, or a PDF that has
+been replaced with a shorter one, is picked up correctly.
+
+For the backlog that predates this column:
+
+```bash
+npm run ocr:pages -- --limit 5000
+```
+
+It is safe to interrupt and safe to run repeatedly: counts are written as they are
+learned, and a document that already has one is skipped. Add `--refresh` to
+re-probe, `--municipality POKHARA1` to narrow the scope, `--dry-run` to report
+without writing. Expect it to be slow — that is the portals, not the tool.
 
 ---
 
