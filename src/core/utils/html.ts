@@ -1,6 +1,7 @@
 import { load as cheerioLoad, CheerioAPI, Cheerio, Element } from "cheerio";
 import { chromium } from "playwright";
 import { DocumentData } from "../types/domain.js";
+import { createDocument } from "./document.js";
 
 /**
  * Scopes a full page HTML string down to the inner HTML of the first element
@@ -173,14 +174,9 @@ export async function extractCdnLinksViaNetwork(
 
     console.log(`[CDN Extraction] Captured URLS: ${Array.from(capturedUrls)}`);
 
-    return Array.from(capturedUrls).map((url) => ({
-        fileName: decodeURIComponent(url.split("/").pop()?.split("?")[0] || "Document.pdf"),
-        fileType: "pdf",
-        originalUrl: decodeURIComponent(url),
-        storagePath: null,
-        downloadStatus: "skipped",
-        downloadError: null,
-    }));
+    // Same constructor as the DOM scanner below, so a document found through the
+    // CDN produces the same row as one found in the markup.
+    return Array.from(capturedUrls).map((url) => createDocument(url, url));
 }
 
 /**
@@ -333,14 +329,14 @@ export function extractDocumentLinks(
                 fileName = "Untitled Document";
             }
 
-            documentsMap.set(resolvedUrl, {
-                fileName,
-                fileType: resolvedExt || "unknown",
-                originalUrl: resolvedUrl,
-                storagePath: null,
-                downloadStatus: "skipped",
-                downloadError: null,
-            });
+            // Keyed by the document's own originalUrl, not by the link we happened
+            // to read. createDocument normalises the URL -- absolute, no query, no
+            // fragment -- and that normalised form is what the database treats as
+            // the document's identity. Keying the map on the raw link instead meant
+            // the page could hold two entries that were the same document, and the
+            // de-duplication here was quietly weaker than the constraint below it.
+            const document = createDocument(resolvedUrl, baseUrl, fileName || resolvedExt);
+            documentsMap.set(document.originalUrl, document);
         }
     });
 
@@ -407,15 +403,11 @@ export function extractDocumentLinks(
                 `Image_${Date.now()}.${normalizedExt}`,
             );
 
-            if (!documentsMap.has(normalizedUrl)) {
-                documentsMap.set(normalizedUrl, {
-                    fileName,
-                    fileType: normalizedExt,
-                    originalUrl: normalizedUrl,
-                    storagePath: null,
-                    downloadStatus: "skipped",
-                    downloadError: null,
-                });
+            const imageDocument = createDocument(normalizedUrl, baseUrl, fileName || normalizedExt);
+            // First sighting wins: an anchor reached from an <img> is named better
+            // than the image alone, and it is discovered first.
+            if (!documentsMap.has(imageDocument.originalUrl)) {
+                documentsMap.set(imageDocument.originalUrl, imageDocument);
             }
         }
     });
@@ -433,15 +425,9 @@ export function extractDocumentLinks(
                 const decoded = decodeURIComponent(pathParts[pathParts.length - 1]);
                 if (decoded) fileName = decoded;
             } catch {}
-            if (!documentsMap.has(absoluteUrl)) {
-                documentsMap.set(absoluteUrl, {
-                    fileName,
-                    fileType: "pdf",
-                    originalUrl: absoluteUrl,
-                    storagePath: null,
-                    downloadStatus: "skipped",
-                    downloadError: null,
-                });
+            const flipbookDocument = createDocument(absoluteUrl, baseUrl, fileName);
+            if (!documentsMap.has(flipbookDocument.originalUrl)) {
+                documentsMap.set(flipbookDocument.originalUrl, flipbookDocument);
             }
         }
     }
