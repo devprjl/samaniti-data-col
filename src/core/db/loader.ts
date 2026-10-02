@@ -88,9 +88,54 @@ function buildDocumentUpsertQuery(docs?: DocumentData[]) {
                 downloadError: doc.downloadError ?? null,
                 ocrStatus: doc.ocrStatus ?? "pending",
                 ocrData: doc.ocrData ?? null,
+                // The PDF probe runs at crawl time so the OCR queue can order by
+                // page count. Null is a real answer meaning "could not be read", so
+                // it is stored rather than dropped: an absent column would be
+                // indistinguishable from a row that predates the probe.
+                metadata: doc.metadata ?? undefined,
             },
         })),
     };
+}
+
+/**
+ * Writes a freshly measured page count onto documents that already exist.
+ *
+ * This is separate from the upsert above because `connectOrCreate` cannot do it.
+ * Prisma 7 removed the `update` option from `connectOrCreate`, so that clause only
+ * ever runs on first insert -- and these documents are re-scraped routinely, so a
+ * measurement would be written once and then frozen. A portal that replaced a long
+ * PDF with a one-page notice would keep being costed as a long document forever.
+ *
+ * A nested `upsert` is not an option either: the same helper feeds both the parent's
+ * `create` and its `update`, and in the `create` branch the documents do not exist
+ * yet, so only `create` and `connectOrCreate` are valid there.
+ *
+ * Only successful measurements are written. A probe that found the host gone
+ * records `reachable: false`, and that must not erase a page count an earlier
+ * scrape established -- municipal portals go down, and a document would otherwise
+ * lose its count because its server was unreachable today.
+ */
+async function refreshDocumentMetadata(docs?: DocumentData[]): Promise<void> {
+    if (!docs || docs.length === 0) return;
+
+    const measured = docs.filter((doc) => {
+        if (!doc.originalUrl || doc.metadata == null) return false;
+        return (doc.metadata as { reachable?: boolean | null }).reachable !== false;
+    });
+    if (measured.length === 0) return;
+
+    // One update per document rather than a single updateMany: each carries its own
+    // metadata, so there is no one value to set them all to. Batched into one
+    // transaction so the page is not left half-measured if one write fails.
+    await prisma.$transaction(
+        measured.map((doc) =>
+            prisma.document.update({
+                where: { originalUrl: doc.originalUrl! },
+                data: { metadata: doc.metadata ?? undefined },
+            }),
+        ),
+    );
 }
 
 /**
@@ -151,6 +196,10 @@ export async function upsertPolicyEntity(data: PolicyEntityData): Promise<{ adde
             documents: buildDocumentUpsertQuery(documents),
         },
     });
+
+    // Second pass, because the upsert above cannot write to a document that
+    // already exists. This is what makes a re-scrape actually refresh a page count.
+    await refreshDocumentMetadata(documents);
 
     return { added: !existing };
 }

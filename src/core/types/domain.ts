@@ -1,3 +1,5 @@
+import type { DocumentMetadata } from "../utils/pdf-metadata.js";
+
 export interface MunicipalityData {
     code: string;
     nameNe: string;
@@ -42,6 +44,13 @@ export interface DocumentData {
     downloadStatus: DownloadStatus;
     /** Human-readable error message when downloadStatus is "failed" */
     downloadError?: string | null;
+    /**
+     * Facts about the file learned by probing it, chiefly `pageCount`. The OCR
+     * queue orders by page count so short documents are converted first. A null
+     * pageCount means "could not be read", which the ordering treats as unknown
+     * rather than as zero.
+     */
+    metadata?: DocumentMetadata | null;
     ocrData?: string | null;
     ocrStatus?: OcrStatus;
     ocrError?: string | null;
