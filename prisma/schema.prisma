@@ -98,6 +98,7 @@ model Document {
   createdAt      DateTime      @default(now()) @map("created_at")
   downloadError  String?       @map("download_error")
   downloadStatus String        @default("pending") @map("download_status")
+  metadata       Json?         @map("metadata")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   policyEntity   PolicyEntity? @relation(fields: [policyEntityId], references: [id], onDelete: Cascade)
 
