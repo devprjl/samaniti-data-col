@@ -11,6 +11,7 @@
         "build": "tsc && npm --workspace=src/web/frontend run build",
         "postinstall": "prisma generate",
         "start": "concurrently \"npm run web:backend:dev\" \"npm run web:frontend:dev\"",
+        "dev": "concurrently \"npm run start\" \"npm run ocr:worker\"",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
         "db:reset": "tsx scripts/reset-db.ts",
@@ -29,10 +30,9 @@
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "ocr:worker": "cd services/ocr && .venv/bin/python worker.py",
-        "ocr:server": "cd services/ocr && .venv/bin/python server.py",
         "ocr:enqueue": "tsx scripts/enqueue-ocr.ts",
-        "ocr:sweep": "cd services/ocr && .venv/bin/python sweep.py",
-        "ocr:sweep:stats": "cd services/ocr && .venv/bin/python sweep.py stats"
+        "ocr:pages": "tsx scripts/backfill-page-counts.ts",
+        "ocr:sweep": "cd services/ocr && .venv/bin/python sweep.py"
     },
     "lint-staged": {
         "*.{ts,tsx,js,jsx}": [
