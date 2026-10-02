@@ -25,9 +25,8 @@ import requests
 
 import db
 import settings
-from ocr.config import profile_hardware, ready_engines
-from ocr.pipeline import build_converter, convert_document
-from ocr.utils import get_local_artifacts_path
+from ocr.config import ENGINE_NAME, describe_device
+from ocr.pipeline import build_converter, convert_document, count_pages
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,26 +70,21 @@ def get_redis_client() -> redis.Redis:
 
 
 class OcrWorker:
-    def __init__(self, engine: str = "auto", cache_dir: str = ".cache"):
+    """Pulls documents off the queue, converts them, and saves the result."""
+
+    def __init__(self):
         self.running = True
         self.redis_client = get_redis_client()
-        self.engine = engine
-        self.cache_dir = cache_dir
-        self.artifacts_path = get_local_artifacts_path(cache_dir)
-        self.hw = profile_hardware()
 
         logger.info(f"Connecting to Redis (Queue: {QUEUE_NAME})")
         self.redis_client.ping()
-        logger.info(f"Hardware: {self.hw.summary} | Ready engines: {ready_engines()}")
 
-        logger.info(f"Initializing Docling converter (engine={self.engine})...")
-        self.converter, self.engine_label = build_converter(
-            engine=self.engine,
-            artifacts_path=self.artifacts_path,
-            cache_dir=self.cache_dir,
-            images_scale=2.0,
-        )
-        logger.info(f"Converter ready with engine label: {self.engine_label}")
+        logger.info(f"Device: {describe_device()}")
+        logger.info("Loading EasyOCR and Docling models, please wait ...")
+        # Built once and reused for every document. Building it again per job
+        # would reload all the models each time.
+        self.converter = build_converter()
+        logger.info("Ready. Waiting for documents.")
 
     def stop(self) -> None:
         self.running = False
@@ -147,14 +141,29 @@ class OcrWorker:
             else:
                 input_source = source_url
 
-            # Rendering each PDF page to an image before conversion is what
-            # bypasses the broken font encodings in these government PDFs.
+            # Record the page count measured from the file we just downloaded.
+            # This is the authoritative number, and it is what makes the OCR queue's
+            # shortest-document-first ordering converge: documents the pre-download
+            # probe could not measure arrive here with no count, and this fills it in
+            # for the next time they are considered.
+            if str(input_source).lower().endswith(".pdf"):
+                pages = count_pages(input_source)
+                if pages:
+                    try:
+                        db.save_page_count(document_id, pages)
+                        logger.info(f"Recorded {pages} page(s) for {document_id}")
+                    except Exception as exc:
+                        # Never fail a completed conversion over a bookkeeping write.
+                        logger.warning(f"Could not record page count: {exc}")
+
+            # This runs the three steps in ocr/pipeline.py: render each page to
+            # an image, read it with EasyOCR, rebuild the layout with docling.
             start_t = time.time()
             markdown_content = convert_document(
                 converter=self.converter,
                 source=input_source,
                 max_pages=int(max_pages) if (max_pages and int(max_pages) > 0) else None,
-                images_scale=scale,
+                scale=scale,
             )
             elapsed = time.time() - start_t
 
@@ -166,7 +175,7 @@ class OcrWorker:
             db.save_document_ocr(
                 document_id=document_id,
                 ocr_data=markdown_content,
-                ocr_engine=self.engine_label,
+                ocr_engine=ENGINE_NAME,
                 status=db.STATUS_COMPLETED,
             )
 
@@ -174,7 +183,7 @@ class OcrWorker:
                 "job_completed",
                 {
                     "document_id": document_id,
-                    "engine": self.engine_label,
+                    "engine": ENGINE_NAME,
                     "duration_s": elapsed,
                     "char_count": len(markdown_content),
                 },
@@ -237,20 +246,16 @@ class OcrWorker:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OCR Background Queue Worker")
-    parser.add_argument(
-        "--engine",
-        default="auto",
-        choices=["auto", "paddleocr", "suryaocr", "easyocr", "vlm"],
+    parser = argparse.ArgumentParser(
+        description="OCR queue worker: reads documents off the Redis queue and saves them as Markdown"
     )
     parser.add_argument("--limit", type=int, default=None, help="Process up to N jobs and exit")
-    parser.add_argument("--cache-dir", default=".cache", help="Cache directory for models")
     args = parser.parse_args()
 
-    worker = OcrWorker(engine=args.engine, cache_dir=args.cache_dir)
+    worker = OcrWorker()
 
     def _sig_handler(sig, frame):
-        logger.info("Termination signal received. Exiting gracefully...")
+        logger.info("Shutdown requested. Finishing up ...")
         worker.stop()
 
     signal.signal(signal.SIGINT, _sig_handler)

@@ -20,7 +20,7 @@ from flask import Flask, jsonify, request
 
 import db
 import settings
-from ocr.config import profile_hardware, ready_engines
+from ocr.config import ENGINE_NAME, describe_device
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,8 +49,6 @@ def health_check():
     not just that the process is alive. Redis and Postgres are separate
     containers and either can be down while this one is fine.
     """
-    hw = profile_hardware()
-
     try:
         redis_ok = bool(get_redis_client().ping())
     except Exception as exc:
@@ -70,8 +68,8 @@ def health_check():
             "status": "healthy" if healthy else "degraded",
             "redis": "connected" if redis_ok else "disconnected",
             "database": "connected" if db_ok else "disconnected",
-            "device": hw.summary,
-            "ready_engines": ready_engines(),
+            "engine": ENGINE_NAME,
+            "device": describe_device(),
         }
     ), (200 if healthy else 503)
 
@@ -103,7 +101,6 @@ def enqueue_job():
         "file_name": payload.get("file_name", "document.pdf"),
         "max_pages": payload.get("max_pages"),
         "scale": payload.get("scale", 2.0),
-        "engine": payload.get("engine", "auto"),
     }
     get_redis_client().lpush(QUEUE_NAME, json.dumps(job))
     return jsonify({"status": "queued", "job": job}), 202
@@ -138,7 +135,6 @@ def enqueue_pending_jobs():
                     "document_id": doc["id"],
                     "source_url": doc["original_url"],
                     "file_name": doc["file_name"],
-                    "engine": "auto",
                 }
             ),
         )
@@ -153,7 +149,7 @@ def enqueue_pending_jobs():
     )
 
 
-def start_background_worker(engine: str = "auto") -> threading.Thread:
+def start_background_worker() -> threading.Thread:
     """
     Runs the worker in a daemon thread beside the HTTP server.
 
@@ -164,7 +160,7 @@ def start_background_worker(engine: str = "auto") -> threading.Thread:
     from worker import OcrWorker
 
     logger.info("Starting background OCR worker thread...")
-    worker = OcrWorker(engine=engine)
+    worker = OcrWorker()
     thread = threading.Thread(target=worker.run, daemon=True, name="OcrWorkerThread")
     thread.start()
     return thread
@@ -179,15 +175,10 @@ def main() -> None:
         action="store_true",
         help="Run the queue worker in a background thread of this process",
     )
-    parser.add_argument(
-        "--engine",
-        default="auto",
-        choices=["auto", "paddleocr", "suryaocr", "easyocr", "vlm"],
-    )
     args = parser.parse_args()
 
     if args.with_worker or os.environ.get("RUN_WORKER_IN_PROCESS") == "true":
-        start_background_worker(engine=args.engine)
+        start_background_worker()
 
     app.run(host=args.host, port=args.port)
 

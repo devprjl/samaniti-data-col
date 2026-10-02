@@ -1,180 +1,85 @@
 # SPDX-License-Identifier: MIT
 """
-main.py - CLI entry point for OCR Robust.
+main.py - Try the OCR on a single document from the command line.
 
     python main.py <source> [options]
 
-The engine is chosen at runtime from what is actually installed and usable, so
-the same command works on a workstation, a laptop, a CPU-only server, or in a
-container. Nothing here depends on a specific GPU model.
+This is the easy way to check that a document comes out right. The unattended
+version is worker.py, which reads jobs off a queue instead.
 
-Run `python main.py --help` for options, or see README.md.
+How it works: PDF -> image -> EasyOCR reads the words -> Docling rebuilds the
+layout -> Markdown. See ocr/pipeline.py for the details.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
-from ocr.config import (
-    ENGINES,
-    VLM_MODELS,
-    profile_hardware,
-    ready_engines,
-    unavailable_reasons,
-)
-from ocr.pipeline import build_converter, convert_document
-from ocr.utils import get_base_name, get_local_artifacts_path
+from ocr.config import ENGINE_NAME, describe_device
+from ocr.pipeline import DEFAULT_IMAGE_SCALE, build_converter, convert_document
+from ocr.utils import get_base_name
 
 
-def _banner(source: str, engine: str, hw) -> None:
-    avail = ", ".join(ready_engines()) or "none"
-    print(
-        f"\nOCR Robust\n"
-        f"  source   : {source}\n"
-        f"  engine   : {engine}\n"
-        f"  device   : {hw.summary}\n"
-        f"  engines  : {avail}\n",
-        file=sys.stderr,
-    )
-
-
-def _report_missing() -> None:
-    """Explain, per engine, why it cannot be used here."""
-    reasons = unavailable_reasons()
-    optional = {k: v for k, v in reasons.items() if k in ("paddleocr", "suryaocr")}
-    if not optional:
-        return
-    print("[setup] engines unavailable on this machine:", file=sys.stderr)
-    for engine, why in optional.items():
-        print(f"          {engine}: {why}", file=sys.stderr)
-    print(
-        "[setup] continuing with the engines that are usable "
-        "(override with --engine).\n",
-        file=sys.stderr,
-    )
-
-
-def run_ocr(
-    source: str,
-    engine: str = "auto",
-    model: str | None = None,
-    max_pages: int | None = None,
-    cache_dir: str = ".cache",
-    images_scale: float = 2.0,
-    prefer_device: str | None = None,
-) -> None:
+def run_ocr(source, max_pages=None, scale=DEFAULT_IMAGE_SCALE):
     """
-    Run OCR on a PDF or image and write the Markdown to the output directory.
+    Run OCR on one PDF or image and save the Markdown next to this file.
 
-    engine:       'auto' | 'paddleocr' | 'suryaocr' | 'easyocr' | 'vlm'
-    model:        VLM preset, only used by engine='vlm'
-    images_scale: page render multiplier (1.0 ~72 DPI, 2.0 ~150 DPI, 3.0 ~216 DPI)
+    source:     path to a PDF or image (PNG, JPG, TIFF, WEBP)
+    max_pages:  stop after this many pages, or None for all of them
+    scale:      image sharpness; 2.0 is normal, 3.0 for small or faded print
+
+    Nothing is written to the database from here. Only worker.py does that.
     """
-    hw = profile_hardware(prefer_device)
+    print(f"\nOCR - EasyOCR\n  source: {source}\n  device: {describe_device()}\n")
 
-    converter, label = build_converter(
-        engine=engine,
-        model=model,
-        artifacts_path=get_local_artifacts_path(cache_dir),
-        cache_dir=cache_dir,
-        images_scale=images_scale,
-        prefer_device=prefer_device,
-    )
-    _banner(source, label, hw)
-    _report_missing()
+    converter = build_converter(scale=scale)
+    print("[ocr] converting ...")
 
-    print("[ocr] converting (rendered image pipeline)...", file=sys.stderr)
     try:
         markdown_text = convert_document(
             converter=converter,
             source=source,
             max_pages=max_pages,
-            images_scale=images_scale,
+            scale=scale,
         )
     except Exception as exc:
-        print(f"[error] conversion failed: {exc}", file=sys.stderr)
+        print(f"[error] conversion failed: {exc}")
         raise SystemExit(1) from exc
 
-    output_dir = Path(
-        os.environ.get("OCR_OUTPUT_DIR", Path(__file__).parent.resolve() / "output")
-    )
+    # Where to save. OCR_OUTPUT_DIR overrides the default location.
+    output_dir = Path(os.environ.get("OCR_OUTPUT_DIR", Path(__file__).parent / "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
-    base_name = get_base_name(source)
-    if base_name in ("", "pdf"):
-        base_name = "document"
 
-    md_path = output_dir / f"{base_name}_{label}.md"
-    md_path.write_text(markdown_text, encoding="utf-8")
-    print(f"done: {md_path}", file=sys.stderr)
-    print("-" * 56, file=sys.stderr)
+    # Use the document's own name for the file, so it is easy to find later.
+    file_name = get_base_name(source)
+    output_file = output_dir / f"{file_name}_{ENGINE_NAME}.md"
+    output_file.write_text(markdown_text, encoding="utf-8")
+
+    print(f"\ndone: {output_file}")
+    print("-" * 56)
     print(markdown_text[:1200])
-    return
 
 
-def main() -> None:
-    engine_help = ["OCR engines (auto-detected; 'auto' picks the best available):", ""]
-    for name, meta in ENGINES.items():
-        engine_help.append(f"  {name:<11} {meta['blurb']}")
-    engine_help += [
-        "",
-        "Only installed engines are selectable; anything else falls back",
-        "automatically. PaddleOCR and SuryaOCR need an extra native runtime:",
-        "  pip install paddlepaddle paddleocr     # PaddleOCR",
-        "  pip install surya-ocr                  # SuryaOCR",
-    ]
-
+def main():
     parser = argparse.ArgumentParser(
         prog="main.py",
-        description="OCR Robust - multilingual OCR for Nepali / Hindi / English documents",
-        epilog="\n".join(engine_help),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Convert one PDF or image to Markdown using EasyOCR",
     )
-    parser.add_argument("source", help="Path or URL to a PDF or image")
-    parser.add_argument(
-        "--engine",
-        choices=["auto", "paddleocr", "suryaocr", "easyocr", "vlm"],
-        default="auto",
-        help="OCR engine to use (default: auto).",
-    )
-    parser.add_argument(
-        "--model",
-        choices=sorted(VLM_MODELS),
-        default=None,
-        help="VLM preset; only used with --engine vlm (default: auto-sized).",
-    )
+    parser.add_argument("source", help="Path to a PDF or image")
     parser.add_argument(
         "--scale",
         type=float,
-        default=2.0,
+        default=DEFAULT_IMAGE_SCALE,
         metavar="FLOAT",
-        help="Render multiplier: 1.0~72DPI, 2.0~150DPI (default), 3.0~216DPI.",
+        help="Image sharpness: 1.0=72dpi, 2.0=150dpi (default), 3.0=216dpi",
     )
     parser.add_argument(
-        "--max-pages", type=int, default=None, metavar="N", help="Limit PDF pages."
-    )
-    parser.add_argument(
-        "--cache-dir", default=".cache", metavar="DIR", help="Model cache directory."
-    )
-    parser.add_argument(
-        "--device",
-        choices=["cpu", "cuda", "mps"],
-        default=None,
-        help="Force a device. Unavailable requests fall back to auto.",
+        "--max-pages", type=int, default=None, metavar="N", help="Only read N pages"
     )
 
     args = parser.parse_args()
-    run_ocr(
-        source=args.source,
-        engine=args.engine,
-        model=args.model,
-        max_pages=args.max_pages,
-        cache_dir=args.cache_dir,
-        images_scale=args.scale,
-        prefer_device=args.device,
-    )
+
+    run_ocr(source=args.source, max_pages=args.max_pages, scale=args.scale)
 
 
 if __name__ == "__main__":

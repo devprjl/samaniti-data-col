@@ -1,11 +1,15 @@
 """
-ocr/utils.py – Filename sanitization and output helpers.
+ocr/utils.py - Turning a document's name into a safe file name.
+
+Documents arrive from government websites, so their names are messy: they can be
+full of percent-encoding ("%E0%A4%B8"), or characters a filesystem will not
+accept. This cleans that up so we can name the output file after the source.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from urllib.parse import unquote
 
 # ext4 and APFS cap a name at 255 *bytes*; save_outputs() then appends
@@ -69,28 +73,3 @@ def get_base_name(source: str) -> str:
     clean = source.split("?")[0]
     stem = PurePosixPath(clean).stem
     return sanitize_filename(stem) or "document"
-
-
-def get_local_artifacts_path(custom_cache_dir: str | None = None) -> Path | None:
-    """
-    Search common locations for pre-downloaded Docling model artifacts.
-    Returns the first non-empty directory found, or None.
-    """
-    candidates: list[Path] = []
-
-    if custom_cache_dir:
-        base = Path(custom_cache_dir).resolve()
-        candidates += [base, base / "models"]
-
-    home = Path.home()
-    candidates += [
-        home / ".cache" / "docling" / "models",
-        home / ".cache" / "docling",
-        Path("./.cache").resolve(),
-    ]
-
-    for path in candidates:
-        if path.exists() and any(path.iterdir()):
-            return path
-
-    return None

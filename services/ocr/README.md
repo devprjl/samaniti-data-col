@@ -1,236 +1,162 @@
-# OCR Robust
+# OCR
 
-Multilingual OCR and document understanding for **Nepali (नेपाली)**, **Hindi (हिन्दी)** and **English**, built on [Docling](https://github.com/DS4SD/docling).
+Converts Nepali, Hindi and English **PDFs and images** into clean Markdown.
 
-The OCR engine is **selected at runtime** from what is actually installed and usable on the machine, so the same code runs unchanged on a workstation, a laptop, a CPU-only server, or inside a container.
+This file describes the service itself, file by file, for anyone working inside it.
+For how the work is queued, ordered and operated, see
+[the OCR pipeline guide](../../docs/ocr-pipeline-guide.md).
 
----
+## How it works
 
-## Requirements
+Everything happens in three steps:
 
-**Python 3.10 – 3.13. Python 3.13 is recommended.**
+```
+  1. PDF  ──►  one image per page      (pypdfium2)
+  2. image ──►  the words on it        (EasyOCR)
+  3. words ──►  Markdown with headings
+                and real tables         (Docling)
+```
 
-| Python | Status |
+Then `worker.py` writes the Markdown into the database. That is the whole
+service.
+
+**Why step 1 happens.** The government documents we handle embed fonts such as
+Preeti, which have no usable Unicode equivalent. Reading the text layer of such a
+PDF gives garbage before OCR even starts. Drawing each page as a picture throws
+that broken text away, and EasyOCR reads the picture — the same thing a person
+would do.
+
+**Why step 3 is still needed.** EasyOCR only reads words off a picture. It knows
+nothing about which words are a heading, which are body text, or which sit in a
+table. Docling works out the page layout, puts everything in reading order,
+rebuilds tables with its TableFormer model, and writes the Markdown.
+
+So the two do not overlap: **EasyOCR reads the words, Docling arranges them.**
+
+## Layout
+
+| File | What it does |
 | :--- | :--- |
-| 3.13 | ✅ **Recommended** — newest version where every engine installs |
-| 3.12, 3.11, 3.10 | ✅ Supported |
-| 3.14+ | ⚠️ EasyOCR only — PaddlePaddle has no cp314 wheel, and SuryaOCR needs `Pillow<11` (newest is 10.4.0, cp313 max) |
+| `ocr/pipeline.py` | **Start here.** The three steps above, as plain functions. |
+| `ocr/config.py` | The few settings: which languages, which device. |
+| `ocr/utils.py` | Cleans up a downloaded file's name so we can name the output. |
+| `main.py` | Try it on one document from the command line. |
+| `worker.py` | The real job: reads a queue, converts, saves to the database. |
+| `server.py` | A small HTTP API for health checks and manual backfills. |
+| `db.py` | The database queries. |
+| `settings.py` | Loads `.env`. |
+| `sweep.py` | Finds documents whose source website no longer exists. |
 
-### Setting up with mise
+Start with `ocr/pipeline.py` — it is the only file that matters if you are trying
+to understand the OCR itself.
 
-`mise.toml` in the repo root pins Python 3.13, so:
+## Setup
+
+**Python 3.13 is recommended.** `mise.toml` in the repository root pins it.
 
 ```bash
-mise install          # installs the pinned 3.13
+mise install                                     # install the pinned Python 3.13
 python -m venv services/ocr/.venv
-pip install -r services/ocr/requirements.txt
+services/ocr/.venv/bin/pip install -r services/ocr/requirements.txt
 ```
 
-Or explicitly:
+That is the whole setup — one dependency, `docling[easyocr]`, which brings in
+EasyOCR and everything else.
+
+The first run downloads the language models and takes a few minutes. Every run
+after that reuses them from the cache.
+
+## Try it on one document
 
 ```bash
-mise use python@3.13
-python -m venv services/ocr/.venv
-pip install -r services/ocr/requirements.txt
+cd services/ocr
+.venv/bin/python main.py document.pdf
 ```
 
-That is the whole setup. The `npm run ocr:*` scripts expect the environment at
-`services/ocr/.venv`. Then:
+Options:
 
 ```bash
-python services/ocr/main.py document.pdf
+.venv/bin/python main.py document.pdf --max-pages 5     # just the first 5 pages
+.venv/bin/python main.py document.pdf --scale 3.0       # for small or faded print
+.venv/bin/python main.py scan.jpg                       # images work too
 ```
 
-### Without mise
+The Markdown is written to `output/`, or wherever `OCR_OUTPUT_DIR` points. The
+first 1200 characters are printed to the terminal so you can see it worked.
 
-Any Python 3.13 install works the same way — the `python3.13` binary, pyenv, the
-py launcher, or your OS package manager are all fine.
+Nothing here touches the database. That is `worker.py`'s job.
 
----
+### If the text comes out wrong
 
-## Optional engines
-
-Both are auto-detected. If one cannot run here, the tool says why on startup and
-continues with the rest — it never crashes on a missing engine.
-
-```bash
-pip install paddlepaddle paddleocr   # PaddleOCR
-pip install surya-ocr                # SuryaOCR
-```
-
-Neither is a plain `pip install` and finish. Each has a runtime prerequisite:
-
-| Engine | Extra requirement |
-| :--- | :--- |
-| `paddleocr` | **AVX-512 CPU.** PaddlePaddle's oneDNN kernels fail on the first inference on AVX2-only processors, so the engine is reported unavailable there. |
-| `suryaocr` | **An inference backend.** Current releases delegate to vLLM (Docker + NVIDIA runtime) or llama.cpp. On CPU: install `llama-server` and `export SURYA_INFERENCE_BACKEND=llamacpp`. On GPU: vLLM via Docker. |
-
----
-
-## Install
-
-From the repository root, with mise:
-
-```bash
-mise install
-python -m venv services/ocr/.venv
-pip install -r services/ocr/requirements.txt
-```
-
-Or with any other Python 3.13:
-
-```bash
-python3.13 -m venv services/ocr/.venv
-pip install -r services/ocr/requirements.txt
-```
-
-Optional engines can also be installed via extras:
-
-```bash
-pip install -e "services/ocr[paddle]"
-pip install -e "services/ocr[surya]"
-```
-
-The development tools — ruff, mypy, pytest — come from `requirements-dev.txt`:
-
-```bash
-pip install -r services/ocr/requirements-dev.txt
-ruff check services/ocr
-```
-
----
-
-## Usage
-
-```bash
-python main.py <source> [options]
-```
-
-`<source>` is a local PDF or image (`.png`, `.jpg`, `.tiff`, `.webp`) or a URL.
-
-```bash
-# Let the tool pick the best available engine
-python main.py document.pdf
-
-# Force a specific engine
-python main.py document.pdf --engine paddleocr
-python main.py document.pdf --engine suryaocr
-python main.py document.pdf --engine easyocr
-python main.py document.pdf --engine vlm --model smoldocling
-
-# Test-drive the first few pages
-python main.py document.pdf --max-pages 5
-```
-
-Output is written to `output/`. Set `OCR_OUTPUT_DIR` to change the location.
-
----
+Almost always the image resolution, not the engine. `--scale 2.0` is about 150
+DPI. Try `--scale 3.0` first; it costs time and memory but fixes most faded or
+small-print documents.
 
 ## As a service
 
-The CLI above is for one document at a time. In this repository the OCR runs
-unattended instead, as a queue, because a conversion takes minutes and nobody is
-going to sit and type a command for three thousand documents.
+Running `main.py` by hand does not scale to thousands of documents, so the real
+path is a queue:
 
-The scraper pushes a job onto a Redis list; a worker pops it, converts the document,
-and writes the Markdown into `documents.ocr_data`. Nothing calls the Flask API in
-that path — it exists for health checks and for manual backfills.
-
-```bash
-# The API, with a worker running inside it
-python server.py --with-worker
-
-# Or the worker on its own, which is what you want to scale out
-python worker.py --engine easyocr
-
-# Inspect the queue
-curl localhost:5050/health
-curl localhost:5050/queue
-
-# Queue one document by hand
-curl -X POST localhost:5050/jobs \
-  -H 'Content-Type: application/json' \
-  -d '{"document_id":"...","source_url":"https://.../notice.pdf"}'
-
-# Queue a batch of everything still waiting
-curl -X POST localhost:5050/jobs/enqueue-pending -d '{"limit":100}' \
-  -H 'Content-Type: application/json'
-```
-
-Both entry points read `DATABASE_URL` and `REDIS_URL` from the repository's `.env`, or
-from the environment in a container. See `.env.example`.
-
-### Triage
-
-Most of the backlog is unprocessable, because it points at municipal websites that no
-longer answer. `sweep.py` finds those and, on request, marks them skipped so the real
-backlog is visible:
+1. The scraper pushes a job onto a Redis list.
+2. `npm run ocr:worker` pops the job, downloads the document, runs the three steps above.
+3. The Markdown is written to `documents.ocr_data`, and the status updated.
 
 ```bash
-python sweep.py stats                  # current status breakdown
-python sweep.py unreachable --limit 500          # report only
-python sweep.py unreachable --limit 500 --mark   # write "skipped"
+# Fill the queue (one-shot), from the repository root
+npm run ocr:enqueue -- --limit 100
+npm run ocr:enqueue -- --all
+
+# Convert, until you stop it
+npm run ocr:worker
+
+# Or run the web app and the worker together, in one terminal
+npm run dev
 ```
 
----
+The worker reads `DATABASE_URL` and `REDIS_URL` from the repository's `.env`. See
+`.env.example`.
 
-## Engines
+### Sweeping the backlog
 
-| Engine | Accuracy on Devanagari | Tables | Requires |
-| :--- | :--- | :--- | :--- |
-| `paddleocr` | High | Yes | `paddlepaddle` + `paddleocr`, **AVX-512 CPU** |
-| `suryaocr` | High | Yes | `surya-ocr` + vLLM (Docker/NVIDIA) or `llama-server` |
-| `easyocr` | Good | Yes (TableFormer) | included by default |
-| `vlm` | Highest, slowest | Yes | `docling` + model download |
-
-`--engine auto` (the default) picks the best engine that is actually **runnable**
-on this machine — not merely installed. Anything unusable is listed with the
-specific reason at startup. Requesting an unavailable engine falls back
-automatically rather than failing.
-
-### Tables and images
-
-- **Tables** are reconstructed by Docling's TableFormer, not by the OCR engine.
-  Only *text recognition* is delegated, so switching engines changes the words,
-  never the table markup — the table renders identically either way.
-- **Images** are not extracted. A picture becomes a `<!-- image -->` placeholder
-  tag, so no image bytes are written and memory use stays flat on small machines.
-
----
-
-## Hardware
-
-There is no hardware table, because behaviour is decided by capability rather
-than by device name:
-
-- **GPU use is verified, not assumed.** A GPU is only used if it can actually
-  execute a kernel. A visible-but-incompatible card (for example an older
-  Pascal GPU against a newer PyTorch build) reports itself available and then
-  fails on first use; the tool detects that and falls back to CPU instead of
-  crashing mid-document.
-- **Anything unusable degrades to CPU**, including a forced `--device cuda` on a
-  machine without a working one.
-- **No VRAM table.** When a VLM engine is used, the preset is chosen from a
-  capacity floor so an oversized model is never selected for a small device.
-
-Any of these are equivalent and need no special setup:
+Much of the backlog cannot be processed at all, because it points at municipal
+websites that no longer answer. `sweep.py` finds those:
 
 ```bash
-python main.py doc.pdf                              # auto-detect
-python main.py doc.pdf --device cpu                 # force CPU
-OCR_DEVICE=cpu python main.py doc.pdf               # via environment
+npm run ocr:sweep -- stats                         # status breakdown
+npm run ocr:sweep -- unreachable --limit 500       # report only
+npm run ocr:sweep -- unreachable --limit 500 --mark   # mark them skipped
 ```
 
-Useful environment variables:
+From inside this directory it is the same thing:
+
+```bash
+.venv/bin/python sweep.py stats
+.venv/bin/python sweep.py unreachable --limit 500
+.venv/bin/python sweep.py unreachable --limit 500 --mark
+```
+
+## Configuration
 
 | Variable | Purpose |
 | :--- | :--- |
-| `OCR_DEVICE` | `cpu` / `cuda` / `mps`; falls back if unavailable |
-| `OCR_OUTPUT_DIR` | Output directory |
-| `HF_HOME` | Model cache location |
-| `DOCLING_CACHE` | Docling model cache |
+| `OCR_DEVICE` | `cpu` / `cuda` / `mps`. Falls back if the device is unusable. |
+| `OCR_OUTPUT_DIR` | Where `main.py` writes `.md` files. |
+| `HF_HOME` | Where model weights are cached. |
+| `DOCLING_CACHE` | Where Docling caches its models. |
 
----
+A GPU is used automatically if one works, and the CPU is used otherwise. This is
+checked for real rather than assumed: a graphics card can be visible and still be
+too old for the installed PyTorch, reporting itself available and then failing on
+first use. We ask it to do a tiny matrix multiplication instead of trusting it.
+
+### GPU hosts
+
+Same image, GPU passed at run time:
+
+```bash
+docker run --rm --gpus all -v "$PWD:/data:ro" samaniti-ocr \
+  python main.py /data/document.pdf
+```
 
 ## Container
 
@@ -239,54 +165,38 @@ lives one level up and copies `services/ocr/` into the image.
 
 ```bash
 # From the repository root.
-# Baseline (EasyOCR, CPU) — smallest and most portable
 docker build -f Dockerfile.ocr -t samaniti-ocr .
-
-# With PaddleOCR
-docker build -f Dockerfile.ocr -t samaniti-ocr --build-arg WITH_PADDLE=1 .
-
-# With SuryaOCR
-docker build -f Dockerfile.ocr -t samaniti-ocr --build-arg WITH_SURYA=1 .
-```
-
-`docker-compose.yml` at the repository root builds this image and runs it beside
-Postgres and Redis. See the root README for the short version.
-
-The image runs the service, not a one-off conversion:
-
-```bash
 docker compose up -d
 curl -s localhost:5050/health
 ```
 
-Model weights are cached on the `/models` volume, so the first run is paid for once
-and later rebuilds do not re-download them. The image defaults to Python 3.13, the
-newest interpreter with wheels for torch, paddlepaddle and surya-ocr alike.
-
-To run one document through the image directly, override the command:
+The image runs the service, not a one-off conversion. To run a single document
+through it, override the command:
 
 ```bash
-docker run --rm samaniti-ocr python main.py /data/document.pdf
+docker run --rm -v "$PWD:/data:ro" samaniti-ocr python main.py /data/document.pdf
 ```
 
-GPU hosts use the same image with the GPU passed at run time:
+Model weights live on the `/models` volume, so the first run is paid for once and
+later rebuilds do not re-download them.
 
-```bash
-docker run --rm --gpus all -v "$PWD:/data:ro" samaniti-ocr \
-  python main.py /data/document.pdf
-```
-
----
+On Kubernetes, give the worker replicas a **CPU request equal to their limit** and
+one worker per pod. Two workers sharing two cores are slower than one, not faster,
+and docling already uses several threads per step.
 
 ## Notes
 
-- PaddleOCR and SuryaOCR have been verified to install and initialise on Python
-  3.13, and both are exercised through the full pipeline. Their *accuracy
-  figures* are not published here because neither could complete inference on
-  the test machine (AVX2-only CPU for Paddle; no inference backend for Surya).
-- Preeti and Kantipur legacy fonts have no usable Unicode mapping. If a PDF
-  embeds those fonts, the text layer is unreadable before OCR even starts —
-  such documents need to be rasterized first, and are handled as images.
-- Recognition thresholds are set low deliberately: Devanagari confidence runs
-  lower than Latin, and a strict cutoff silently drops valid text. Docling's
-  layout model filters noise afterwards.
+- **Only EasyOCR.** It is the single text-recognition engine, and it is included
+  by default — there is nothing extra to install and nothing to choose at
+  startup. It handles Nepali (`ne`), English (`en`) and Hindi (`hi`).
+- **Tables come from Docling, not from the OCR engine.** Only the words are
+  delegated, so the table markup is Docling's regardless of which words came back.
+- **Images are not extracted.** A photo or logo becomes a small placeholder tag
+  in the Markdown, so no image bytes are stored and memory stays flat on long
+  documents.
+- **Recognition thresholds are deliberately low** (0.1). Devanagari scores lower
+  confidence than Latin even when it is right, and a stricter cutoff silently
+  drops valid Nepali words.
+- EasyOCR still makes mistakes on Devanagari vowel signs — it will sometimes read
+  `भएको` as `भएकोे`. That is a known weak point of the engine, not a bug in the
+  pipeline. Raising `--scale` helps more than anything else.

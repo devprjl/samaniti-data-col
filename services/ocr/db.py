@@ -10,8 +10,10 @@ vocabulary, and the `?schema=public` suffix that DATABASE_URL carries.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -74,7 +76,8 @@ def get_document(document_id: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, file_name, file_type, original_url, storage_path,
-                   policy_entity_id, ocr_status, ocr_data, ocr_error, ocr_engine
+                   policy_entity_id, ocr_status, ocr_data, ocr_error, ocr_engine,
+                   metadata
             FROM documents WHERE id = %s
             """,
             (document_id,),
@@ -127,12 +130,56 @@ def save_document_ocr(
         )
 
 
+def save_page_count(document_id: str, page_count: int, source: str = "worker") -> None:
+    """
+    Record the page count measured from the file the worker actually downloaded.
+
+    This is the authoritative count. documents.metadata.pageCount is normally a
+    probe's reading, taken from a few hundred kilobytes of the file before it was
+    ever downloaded; this replaces it with a measurement of the whole document,
+    which is exact.
+
+    It exists so the page count converges. Some PDFs keep their page tree outside
+    the windows a ranged read can reach, and those arrive at the worker with no
+    count at all. Once converted, their real cost is known and written back, so the
+    next time they are considered for the queue they sort correctly instead of
+    last.
+
+    `source` records who measured it, so a worker measurement is distinguishable
+    from a probe's guess.
+    """
+    with get_db_cursor() as cur:
+        cur.execute(
+            """
+            UPDATE documents
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || %(patch)s::jsonb,
+                updated_at = NOW()
+            WHERE id = %(id)s
+            """,
+            {
+                "id": document_id,
+                "patch": json.dumps(
+                    {
+                        "pageCount": page_count,
+                        "pageCountSource": source,
+                        "pageCountMeasuredAt": datetime.now(timezone.utc).isoformat(),
+                    }
+                ),
+            },
+        )
+
+
 def get_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
     """
     Fetch documents that still need OCR, read-only.
 
     This does not claim anything. It backs the queue-inspection and health
     endpoints, which must not change any state.
+
+    Ordered shortest-first to match the claim, so what the sweep probes is the
+    work the queue would actually pick up next. Without the page-count ordering
+    it would spend its time probing the back of the backlog, which is the wrong
+    end to be looking at when deciding what is worth converting.
     """
     with get_db_cursor(commit=False) as cur:
         cur.execute(
@@ -140,7 +187,7 @@ def get_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
             SELECT id, file_name, file_type, original_url, storage_path
             FROM documents
             WHERE ocr_status = %s AND (ocr_data IS NULL OR ocr_data = '')
-            ORDER BY created_at ASC
+            ORDER BY (metadata ->> 'pageCount')::int ASC NULLS LAST, created_at ASC
             LIMIT %s
             """,
             (STATUS_PENDING, limit),
@@ -194,8 +241,15 @@ def mark_skipped(
 # "queued" this long was lost; a document left in "processing" this long means
 # the worker was killed mid-conversion. Both are handed back out, otherwise a
 # single kill would strand documents permanently.
+#
+# STALE_QUEUE_PROMOTION_MINUTES is different: it does not detect loss, it stops
+# the shortest-document-first ordering from starving long ones. Keyed on
+# updated_at, which for a queued document is when it was claimed onto the queue --
+# so it measures time spent waiting. Must match
+# STALE_QUEUE_PROMOTION_MINUTES in ocr-producer.ts.
 STALE_QUEUED_MINUTES = 60
 STALE_PROCESSING_MINUTES = 360
+STALE_QUEUE_PROMOTION_MINUTES = 10080
 
 
 def claim_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
@@ -209,6 +263,22 @@ def claim_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
     FOR UPDATE SKIP LOCKED lets concurrent claimers skip rows another claimer is
     holding instead of blocking, and RETURNING reports only the rows this
     statement actually took.
+
+    Shortest documents first. A conversion costs about a minute a page, so a
+    one-page notice queued behind a two-hundred-page gazette would wait hours for
+    work that takes a minute. documents.metadata.page_count is read at crawl time
+    by a probe that reads a couple of hundred kilobytes rather than downloading
+    the file, so the cost is known before the document is queued.
+
+    Two details keep this from going wrong:
+
+    * A document whose page count could not be read has NULL there. NULLS LAST
+      sorts those last, because "unknown" is not "zero pages" -- treating a
+      failed probe as free work would push every unreadable document to the front
+      of the queue.
+    * The first sort key promotes anything that has been queued longer than the
+      promotion window. Page-count ordering alone would starve the long documents
+      indefinitely, and those are the gazettes and policies worth having.
     """
     with get_db_cursor() as cur:
         cur.execute(
@@ -226,7 +296,10 @@ def claim_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
                          AND d.updated_at
                              < NOW() - make_interval(mins => %(stale_processing)s))
                 )
-                ORDER BY d.created_at ASC
+                ORDER BY
+                    (d.updated_at < NOW() - make_interval(mins => %(promotion)s)) DESC,
+                    (d.metadata ->> 'pageCount')::int ASC NULLS LAST,
+                    d.created_at ASC
                 LIMIT %(limit)s
                 FOR UPDATE SKIP LOCKED
             )
@@ -234,7 +307,7 @@ def claim_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
             SET ocr_status = %(queued)s, updated_at = NOW()
             FROM claimable
             WHERE d.id = claimable.id
-            RETURNING d.id, d.file_name, d.file_type, d.original_url
+            RETURNING d.id, d.original_url, d.file_name, d.file_type, d.storage_path
             """,
             {
                 "pending": STATUS_PENDING,
@@ -242,6 +315,7 @@ def claim_pending_documents(limit: int = 50) -> list[dict[str, Any]]:
                 "processing": STATUS_PROCESSING,
                 "stale_queued": STALE_QUEUED_MINUTES,
                 "stale_processing": STALE_PROCESSING_MINUTES,
+                "promotion": STALE_QUEUE_PROMOTION_MINUTES,
                 "limit": limit,
             },
         )

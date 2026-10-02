@@ -9,7 +9,6 @@
 #
 # Build:
 #   docker build -f Dockerfile.ocr -t samaniti-ocr .
-#   docker build -f Dockerfile.ocr --build-arg WITH_PADDLE=1 --build-arg WITH_SURYA=1 -t samaniti-ocr-full .
 #
 # Note that the build context is the repository root even though only services/ocr
 # is copied in, so .dockerignore has to keep package-lock.json: excluding a file a
@@ -53,23 +52,12 @@ COPY services/ocr/README.md ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
-# Optional engines. Off by default: each is a large native install, and the
-# service reports at startup which engines it can actually use and falls back to
-# EasyOCR when an engine is unavailable.
-ARG WITH_PADDLE=0
-ARG WITH_SURYA=0
-RUN set -eux; \
-    if [ "$WITH_PADDLE" = "1" ]; then \
-        pip install paddlepaddle && pip install paddleocr; \
-    fi; \
-    if [ "$WITH_SURYA" = "1" ]; then \
-        pip install surya-ocr; \
-    fi; \
-    python -c "import docling; print('docling import OK')"
-
 COPY services/ocr/settings.py services/ocr/db.py ./
 COPY services/ocr/main.py services/ocr/worker.py services/ocr/server.py ./
 COPY services/ocr/ocr ./ocr
+
+# Fails the build rather than the first job if the OCR stack is incomplete.
+RUN python -c "import docling, easyocr; print('docling + easyocr import OK')"
 
 # Installed only once the sources are in place: setuptools needs main.py and the
 # ocr package to exist before it will build the distribution metadata, so doing

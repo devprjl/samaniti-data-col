@@ -3,16 +3,13 @@
 # The project has two runtimes: Node for the ETL scraper and the web workspace,
 # Python for the OCR service under services/ocr.
 #
-# Python 3.13 is the newest version where every OCR engine installs:
-#   - paddlepaddle 3.3.1 publishes cp313 (no cp314)
-#   - surya-ocr pins Pillow<11; the newest such release (10.4.0) stops at cp313
-#   - torch 2.14 has cp313
-#
-# Using Python 3.14 leaves only the EasyOCR engine available, so 3.13 is pinned
-# for the repository rather than for services/ocr alone. Create the environment
-# with `mise install` and reach the interpreter through `mise exec -- python ...`
-# or the `npm run ocr:*` scripts, which activate services/ocr/.venv.
+# Python 3.13 is the newest release the OCR stack has wheels for: docling, torch
+# and easyocr all publish cp313 builds. Python 3.14 is pinned out until they do.
+# The version is pinned for the repository rather than for services/ocr alone.
+# Create the environment with `mise install` and reach the interpreter through
+# `mise exec -- python ...` or the `npm run ocr:*` scripts, which activate
+# services/ocr/.venv.
 
 [tools]
-node = "22"
+node = "26.7.0"
 python = "3.13"

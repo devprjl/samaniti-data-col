@@ -1,337 +1,247 @@
 # SPDX-License-Identifier: MIT
 """
-ocr/pipeline.py - DocumentConverter factory.
+ocr/pipeline.py - Turns a document into Markdown.
 
-Builds a docling `DocumentConverter` for the requested OCR engine.
+This is the heart of the service. Everything happens in three steps:
 
-Why the engines all produce the same tables
--------------------------------------------
-Only *text recognition* is delegated to the engine (Paddle / Surya / EasyOCR).
-Layout analysis, cell matching and table structure stay inside docling's
-standard pipeline via TableFormer. So switching engines changes the words that
-come out, never the table markup. That is what makes the output comparable
-across engines.
+    STEP 1   PDF          -> one image per page
+    STEP 2   image + text -> EasyOCR reads the words off the image
+    STEP 3   words        -> Docling works out the layout and writes Markdown
 
-Why images are tagged rather than extracted
---------------------------------------------
-`generate_picture_images` stays False, so no image bytes are written to disk,
-and markdown export uses `ImageRefMode.PLACEHOLDER`, which emits a tag where
-the picture was. Cost stays flat on low-memory machines.
+Each step is a function below. Read them in order: pdf_to_images(), then the
+docling setup, then convert_document() which calls both.
+
+Why a PDF is turned into images first
+-------------------------------------
+The government documents we handle embed fonts such as Preeti, which have no
+usable Unicode equivalent. Reading the text layer of such a PDF produces garbage
+before OCR even starts. Rendering each page to a picture throws that broken text
+away, and EasyOCR reads the picture instead, which is what a human would do.
+
+Why Docling is still involved
+-----------------------------
+Docling does everything *except* reading the words. It finds the page layout,
+puts the text blocks in reading order, and rebuilds tables with its TableFormer
+model. It then produces clean Markdown with real headings and real tables.
+
+So the split is: EasyOCR reads the words, Docling arranges them. Both are needed,
+and neither duplicates the other.
 """
 
-from __future__ import annotations
-
-import logging
-import sys
+import os
+import tempfile
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     EasyOcrOptions,
     OcrMode,
     PdfPipelineOptions,
-    TableFormerMode,
     TableStructureOptions,
-    VlmConvertOptions,
-    VlmPipelineOptions,
 )
 from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
-from docling.pipeline.vlm_pipeline import VlmPipeline
 
-from ocr.config import (
-    EASYOCR_LANGS,
-    PADDLEOCR_LANGS,
-    SURYAOCR_LANGS,
-    HardwareProfile,
-    engine_hint,
-    engine_readiness,
-    profile_hardware,
-    select_engine,
-    suggest_model,
-)
-from ocr.engines import register_engines
+from ocr.config import LANGUAGES, detect_device
 
-_log = logging.getLogger(__name__)
-
+# We accept PDFs and plain images.
 ALLOWED_FORMATS = [InputFormat.PDF, InputFormat.IMAGE]
 
-# Docling's own accelerator options, driven by the validated device.
-_ACCEL_DEVICE = {"cuda": "cuda", "mps": "mps", "cpu": "cpu"}
+# How much to sharpen the page images before reading them.
+#
+#   1.0 = about 72 DPI  (too blurry for OCR)
+#   2.0 = about 150 DPI (the default; good for a normal scan)
+#   3.0 = about 216 DPI (better for small or faded print, but slower)
+#
+# Low resolution is the single most common cause of bad OCR, so raise this to 3.0
+# before blaming the engine. Raise it only as far as you need to: bigger images
+# mean more memory and more time.
+DEFAULT_IMAGE_SCALE = 2.0
 
 
-def _accelerator(hw: HardwareProfile) -> AcceleratorOptions:
+# ---------------------------------------------------------------------------
+# STEP 1: PDF -> images
+# ---------------------------------------------------------------------------
+
+def count_pages(pdf_path):
     """
-    Map our validated hardware profile onto docling's accelerator options.
+    How many pages a PDF has, read without rendering anything.
 
-    Flash Attention 2 is left off deliberately: it is only valid on newer
-    NVIDIA architectures, and a wrong guess here is a hard crash. Users on
-    supported cards can opt in via DOCLING_CUDA_USE_FLASH_ATTENTION2=1.
+    This is exact, and it costs milliseconds: the page tree is read straight out of
+    the file. We use it on the downloaded file, which is the one place a page count
+    can be trusted completely.
+
+    Returns None if the file is not a readable PDF, rather than guessing.
     """
     try:
-        return AcceleratorOptions(
-            device=_ACCEL_DEVICE.get(hw.device, "cpu"),
-            num_threads=hw.threads,
-            cuda_use_flash_attention2=False,
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        _log.debug("AcceleratorOptions rejected (%s); using defaults", exc)
-        return AcceleratorOptions(device="cpu", num_threads=hw.threads)
+        with pdfium.PdfDocument(str(pdf_path)) as pdf:
+            return len(pdf)
+    except Exception:
+        return None
 
 
-def _ocr_options_for(engine: str, scale: float, hw: HardwareProfile):
+def pdf_to_images(pdf_path, max_pages=None, scale=DEFAULT_IMAGE_SCALE):
     """
-    Build the engine's own OcrOptions, registered with docling's factory.
+    Turn each page of a PDF into a PNG image on disk.
 
-    Raises RuntimeError when the engine is not installed, with a hint naming
-    the exact package to install.
+    pypdfium2 draws the page exactly as it looks, which is what we want: we need
+    the picture, not the text underneath it.
+
+    pdf_path:     path to the PDF file
+    max_pages:    stop after this many pages, or None for all of them
+    scale:        see DEFAULT_IMAGE_SCALE above
+
+    Returns a list of image paths. The caller is responsible for deleting them;
+    pdf_to_images() will not clean up after itself, because it does not know when
+    you are finished.
     """
-    # Register before options are validated. The pipeline resolves the engine
-    # through its own get_ocr_factory(allow_external_plugins=...) cache entry,
-    # so registration covers every variant.
-    register_engines()
-    from ocr.engines import is_registered
-
-    if engine in ("paddleocr", "suryaocr") and not is_registered(engine):
-        raise RuntimeError(
-            f"engine {engine!r} is not available in this environment "
-            f"(install it with: pip install {engine_hint(engine)})"
-        )
-
-    if engine == "paddleocr":
-        from ocr.engines.paddle_model import PaddleOcrOptions
-
-        opts = PaddleOcrOptions(
-            lang=list(PADDLEOCR_LANGS),
-            mode=OcrMode.FULL_PAGE,
-            scale=max(1.0, scale),
-        )
-    elif engine == "suryaocr":
-        from ocr.engines.surya_model import SuryaOcrOptions
-
-        opts = SuryaOcrOptions(
-            lang=list(SURYAOCR_LANGS),
-            mode=OcrMode.FULL_PAGE,
-            scale=max(1.0, scale),
-        )
-    elif engine == "easyocr":
-        opts = EasyOcrOptions(
-            lang=list(EASYOCR_LANGS),
-            mode=OcrMode.FULL_PAGE,
-            use_gpu=hw.has_gpu,
-            confidence_threshold=0.1,
-            scale=max(1.0, scale),
-        )
-    else:
-        # docling's own availability probe (easyocr, tesseract, rapidocr, ...)
-        from docling.datamodel.pipeline_options import OcrAutoOptions
-
-        opts = OcrAutoOptions(mode=OcrMode.FULL_PAGE)
-
-    # Registration was verified above; return the engine-specific options.
-    return opts
-
-
-def _standard_converter(
-    engine: str,
-    artifacts_path: Path | None,
-    hw: HardwareProfile,
-    images_scale: float,
-) -> DocumentConverter:
-    """Classic docling pipeline: layout + TableFormer + the chosen OCR engine."""
-    pdf_kwargs: dict = {}
-    if artifacts_path:
-        pdf_kwargs["artifacts_path"] = artifacts_path
-
-    opts = PdfPipelineOptions(**pdf_kwargs)
-    opts.do_ocr = True
-    # Tables are always reconstructed: the user needs them rendered exactly.
-    opts.do_table_structure = True
-    opts.table_structure_options = TableStructureOptions(
-        do_cell_matching=True,
-        mode=TableFormerMode.ACCURATE,
-    )
-    opts.accelerator_options = _accelerator(hw)
-    opts.images_scale = images_scale
-    opts.ocr_options = _ocr_options_for(engine, images_scale, hw)
-
-    # Do not extract image bytes: pictures become a placeholder tag in the
-    # markdown instead. Keeps memory and output size predictable.
-    opts.generate_picture_images = False
-    opts.generate_table_images = False
-    opts.generate_page_images = False
-
-    return DocumentConverter(
-        allowed_formats=ALLOWED_FORMATS,
-        format_options={
-            InputFormat.PDF: PdfFormatOption(pipeline_options=opts),
-            InputFormat.IMAGE: ImageFormatOption(pipeline_options=opts),
-        },
-    )
-
-
-def _vlm_converter(
-    model: str,
-    artifacts_path: Path | None,
-    hw: HardwareProfile,
-    images_scale: float,
-) -> DocumentConverter:
-    """Docling VLM pipeline: holistic layout/table understanding from a render."""
-    from ocr.config import VLM_PRESET_ALIASES
-
-    preset = VLM_PRESET_ALIASES.get(model, model)
-    pipeline_opts = VlmPipelineOptions(
-        vlm_options=VlmConvertOptions.from_preset(preset),
-        accelerator_options=_accelerator(hw),
-        images_scale=images_scale,
-    )
-    if artifacts_path:
-        pipeline_opts.artifacts_path = artifacts_path
-
-    return DocumentConverter(
-        allowed_formats=ALLOWED_FORMATS,
-        format_options={
-            InputFormat.PDF: PdfFormatOption(
-                pipeline_cls=VlmPipeline, pipeline_options=pipeline_opts
-            ),
-            InputFormat.IMAGE: ImageFormatOption(
-                pipeline_cls=VlmPipeline, pipeline_options=pipeline_opts
-            ),
-        },
-    )
-
-
-def build_converter(
-    engine: str = "auto",
-    model: str | None = None,
-    artifacts_path: Path | None = None,
-    cache_dir: str = ".cache",
-    images_scale: float = 2.0,
-    prefer_device: str | None = None,
-) -> tuple[DocumentConverter, str]:
-    """
-    Build a converter and return (converter, effective_engine_label).
-
-    engine: 'auto' | 'paddleocr' | 'suryaocr' | 'easyocr' | 'vlm'
-        'auto' picks the best engine that is actually installed and usable on
-        this machine. An explicitly requested engine that is unavailable falls
-        back rather than crashing, and the fallback is reported on stderr.
-    model: VLM preset, used only by the 'vlm' engine.
-    """
-    hw = profile_hardware(prefer_device)
-
-    # 'auto' resolves against what is actually usable here.
-    if engine == "auto":
-        engine = select_engine("auto", hw)
-        print(f"[Pipeline] engine=auto -> {engine}  (device: {hw.device})", file=sys.stderr)
-    elif engine not in ("easyocr", "vlm"):
-        # An explicitly requested engine that cannot run here degrades to
-        # EasyOCR -- a known-good engine -- rather than to a bare converter,
-        # which recognises no Devanagari and silently returns empty pages.
-        ready, reason = engine_readiness(engine)
-        if not ready:
-            print(
-                f"[Pipeline] engine {engine!r} unavailable: {reason}",
-                file=sys.stderr,
-            )
-            print("[Pipeline] falling back to easyocr\n", file=sys.stderr)
-            engine = "easyocr"
-
-    if engine == "vlm":
-        preset = model or suggest_model(hw)
-        try:
-            print(f"[Pipeline] VLM preset: {preset}  (device: {hw.device})", file=sys.stderr)
-            return _vlm_converter(preset, artifacts_path, hw, images_scale), f"vlm_{preset}"
-        except Exception as exc:
-            print(f"[Pipeline] VLM unavailable ({exc}); falling back", file=sys.stderr)
-            engine = "easyocr"
-
+    pdf = pdfium.PdfDocument(str(pdf_path))
     try:
-        print(
-            f"[Pipeline] engine: {engine}  (device: {hw.device}, scale: {images_scale}x)",
-            file=sys.stderr,
-        )
-        converter = _standard_converter(engine, artifacts_path, hw, images_scale)
-        return converter, engine
-    except Exception as exc:
-        # Last resort: a bare converter still extracts embedded text.
-        print(
-            f"[Pipeline] engine {engine!r} failed to start ({exc}); using docling auto",
-            file=sys.stderr,
-        )
-        opts = PdfPipelineOptions()
-        opts.do_ocr = True
-        opts.do_table_structure = True
-        opts.accelerator_options = _accelerator(hw)
-        opts.images_scale = images_scale
-        opts.generate_picture_images = False
-        return (
-            DocumentConverter(
-                allowed_formats=ALLOWED_FORMATS,
-                format_options={
-                    InputFormat.PDF: PdfFormatOption(pipeline_options=opts),
-                    InputFormat.IMAGE: ImageFormatOption(pipeline_options=opts),
-                },
-            ),
-            "docling",
-        )
-
-
-def convert_document(
-    converter: DocumentConverter,
-    source: str | Path,
-    max_pages: int | None = None,
-    images_scale: float = 2.0,
-) -> str:
-    """
-    Converts a document (PDF or Image) into clean Markdown using DocumentConverter.
-
-    For PDFs:
-    Nepali government PDFs consistently feature legacy font encodings (e.g. Preeti
-    font mappings) in their embedded text streams, which causes Docling's PDF parser
-    to extract garbled ASCII symbols and misguide table cell matching.
-
-    By rendering each PDF page directly to a high-resolution raster image first,
-    the corrupted font layer is completely bypassed. The document converter then
-    runs table extraction and OCR directly on the rendered pixels, generating
-    accurate Devanagari text and structured markdown tables.
-    """
-    import tempfile
-
-    import pypdfium2 as pdfium
-
-    path = Path(source)
-    suffix = path.suffix.lower()
-
-    if suffix == ".pdf":
-        pdf = pdfium.PdfDocument(path)
         total_pages = len(pdf)
-        pages_to_process = min(total_pages, max_pages) if max_pages and max_pages > 0 else total_pages
+        how_many = total_pages
+        if max_pages:
+            how_many = min(total_pages, int(max_pages))
 
-        pages_md: list[str] = []
-        for i in range(pages_to_process):
-            page = pdf[i]
-            image = page.render(scale=images_scale).to_pil()
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-            try:
-                image.save(tmp_path)
-                res = converter.convert(tmp_path)
-                page_markdown = res.document.export_to_markdown()
-                if total_pages > 1:
-                    header = f"<!-- Page {i + 1} of {total_pages} -->" + chr(10)
-                    pages_md.append(header + page_markdown)
-                else:
-                    pages_md.append(page_markdown)
-            finally:
-                if tmp_path.exists():
-                    try:
-                        tmp_path.unlink()
-                    except OSError:
-                        pass
+        image_paths = []
+        for page_number in range(how_many):
+            page = pdf[page_number]
+            picture = page.render(scale=scale).to_pil()
 
-        return (chr(10) + chr(10)).join(pages_md)
-    else:
-        res = converter.convert(str(path))
-        return res.document.export_to_markdown()
+            # Save to a temporary PNG file. Docling reads from a file path, so we
+            # need one. `delete=False` because we clean it up ourselves later
+            # instead of letting Python delete it on close.
+            temp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            temp_path = Path(temp_file.name)
+            temp_file.close()
 
+            picture.save(temp_path)
+            image_paths.append(temp_path)
+        return image_paths
+    finally:
+        pdf.close()
+
+
+def delete_images(image_paths):
+    """Delete the temporary page images. Safe to call even if one is already gone."""
+    for path in image_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# STEP 2 + STEP 3: tell Docling to use EasyOCR
+# ---------------------------------------------------------------------------
+
+def build_converter(scale=DEFAULT_IMAGE_SCALE):
+    """
+    Build the Docling converter, with EasyOCR as its text reader.
+
+    Call this once at startup and reuse the result. It loads the layout model,
+    the table model and the OCR models, which takes a while.
+
+    Returns a DocumentConverter, ready to be handed a file path.
+    """
+    options = PdfPipelineOptions()
+
+    # Run OCR on every page. Without this, Docling would only read PDFs that
+    # already contain text and would silently skip our scanned pages.
+    options.do_ocr = True
+
+    # Tell Docling to read the words with EasyOCR.
+    #
+    # We do not pass `use_gpu`. Left unset, Docling works it out from the
+    # accelerator_options below, which is the supported way to do it.
+    options.ocr_options = EasyOcrOptions(
+        lang=list(LANGUAGES),
+        mode=OcrMode.FULL_PAGE,
+        # Accept almost any prediction. Devanagari text scores lower confidence
+        # than English even when it is correct, and a stricter limit silently
+        # throws away valid Nepali words.
+        confidence_threshold=0.1,
+        scale=max(1.0, scale),
+    )
+
+    # Rebuild tables. TableFormer works out which cells belong together, which
+    # is what turns a grid of scattered words into a real Markdown table.
+    options.do_table_structure = True
+    options.table_structure_options = TableStructureOptions(do_cell_matching=True)
+
+    # CPU threads and device. Docling defaults are reasonable, but asking for the
+    # device we already detected keeps one source of truth. On the CPU we cap the
+    # threads: Docling already uses several per step, and taking every core makes
+    # the machine unresponsive.
+    device = detect_device()
+    options.accelerator_options = AcceleratorOptions(
+        device=device if device in ("cuda", "mps") else "cpu",
+        num_threads=min(os.cpu_count() or 1, 8) if device == "cpu" else 4,
+    )
+
+    options.images_scale = scale
+
+    # Do not extract images or screenshots out of the document. A photo or logo
+    # becomes a small placeholder tag in the Markdown instead. This keeps memory
+    # use flat, which matters when a 200-page document arrives.
+    options.generate_picture_images = False
+    options.generate_table_images = False
+    options.generate_page_images = False
+
+    return DocumentConverter(
+        allowed_formats=ALLOWED_FORMATS,
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+            InputFormat.IMAGE: ImageFormatOption(pipeline_options=options),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# The whole job
+# ---------------------------------------------------------------------------
+
+def image_to_markdown(converter, image_path):
+    """Run one page image through Docling and return its Markdown."""
+    result = converter.convert(str(image_path))
+    return result.document.export_to_markdown()
+
+
+def convert_document(converter, source, max_pages=None, scale=DEFAULT_IMAGE_SCALE):
+    """
+    Convert a PDF or an image into Markdown. This is the function the worker calls.
+
+    source:     path to a PDF, PNG, JPG, TIFF or WEBP
+    max_pages:  stop after this many pages, or None for all of them
+    scale:      see DEFAULT_IMAGE_SCALE above
+
+    Returns the document as one Markdown string.
+    """
+    is_pdf = str(source).lower().endswith(".pdf")
+
+    # An image is already what we want, so hand it straight to Docling.
+    if not is_pdf:
+        return image_to_markdown(converter, source)
+
+    # A PDF needs rendering first.
+    page_images = pdf_to_images(source, max_pages=max_pages, scale=scale)
+    if not page_images:
+        return ""
+
+    # A comment marking where each page starts, so a reader of the Markdown can
+    # tell the pages apart. A single-page document gets no marker.
+    page_markers = len(page_images) > 1
+    total = len(page_images)
+
+    pages = []
+    try:
+        for index, image_path in enumerate(page_images, start=1):
+            markdown = image_to_markdown(converter, image_path)
+            if page_markers:
+                markdown = f"<!-- Page {index} of {total} -->\n{markdown}"
+            pages.append(markdown)
+    finally:
+        # Runs even if something above raised, so we never leave stray temp files.
+        delete_images(page_images)
+
+    return "\n\n".join(pages)
