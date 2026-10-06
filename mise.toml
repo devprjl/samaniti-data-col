@@ -1,0 +1,15 @@
+# Toolchain for the whole repository.
+#
+# The project has two runtimes: Node for the ETL scraper and the web workspace,
+# Python for the OCR service under services/ocr.
+#
+# Python 3.13 is the newest release the OCR stack has wheels for: docling, torch
+# and easyocr all publish cp313 builds. Python 3.14 is pinned out until they do.
+# The version is pinned for the repository rather than for services/ocr alone.
+# Create the environment with `mise install` and reach the interpreter through
+# `mise exec -- python ...` or the `npm run ocr:*` scripts, which activate
+# services/ocr/.venv.
+
+[tools]
+node = "26.7.0"
+python = "3.13"

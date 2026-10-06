@@ -13,6 +13,7 @@ const primaryNavigation = [
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
     { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
+    { to: "/ocr-workspace", label: "OCR workspace", icon: "book" },
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 
@@ -44,6 +45,8 @@ function getBreadcrumbs(route, municipalityName) {
             ];
         case "methodology":
             return [{ label: "Data guide" }];
+        case "ocr-workspace":
+            return [{ label: "OCR workspace" }];
         default:
             return [{ label: "Overview" }];
     }

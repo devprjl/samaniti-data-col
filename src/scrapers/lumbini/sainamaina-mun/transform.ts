@@ -43,17 +43,14 @@ async function transformProjectRow(
             : `${baseUrl}${rawHref}`
         : "";
 
-    const docElements = row.find(".file a, a[href$='.pdf']").toArray();
-    const documents: DocumentData[] = [];
-    for (const docEl of docElements) {
-        const rawFileUrl = $(docEl).attr("href");
-        if (!rawFileUrl || rawFileUrl.startsWith("data:")) continue;
-        const fileUrl = rawFileUrl.startsWith("http") ? rawFileUrl : `${baseUrl}${rawFileUrl}`;
-        documents.push(await buildDocument(fileUrl, baseUrl, titleNe, null));
-    }
+    // Scoped to this row, so documents belonging to other rows on the listing
+    // page are not attributed to this one.
+    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
+    // A page that is itself the document. The scanner cannot find this one --
+    // there is no link on the page pointing at the page -- so it is built directly.
     if (documents.length === 0 && sourceUrl.endsWith(".pdf")) {
-        documents.push(await buildDocument(sourceUrl, baseUrl, titleNe, null));
+        documents.push(buildDocument(sourceUrl, baseUrl));
     }
 
     return {
@@ -82,13 +79,12 @@ async function transformReportRow(
     const rawSourceUrl = $titleLink.attr("href") || "";
     const publishedDate = row.find(".views-field-created .field-content").text().trim() || null;
 
-    const rawFileUrl = row.find(".views-field-field-documents a").attr("href") || null;
     const sourceUrl = rawSourceUrl.startsWith("http") ? rawSourceUrl : `${baseUrl}${rawSourceUrl}`;
 
-    const documents: DocumentData[] = [];
-    if (rawFileUrl) {
-        documents.push(await buildDocument(rawFileUrl, baseUrl, titleNe, publishedDate));
-    }
+    // Scoped to the row. `.views-field-field-documents` is the view wrapper around
+    // `.field-name-field-documents`, which the scanner already treats as a file
+    // container, so this finds the same link the old selector did.
+    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,

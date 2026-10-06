@@ -235,11 +235,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $ = cheerio.load(page.html);
     const titleNe = extractTitle($);
     const publishedDate = $(".meta.submitted span").attr("content") || null;
-    const documents = extractDocumentLinks(
-        $,
-        new URL(page.url).origin,
-        $(".content .field-item"),
-    );
+    const documents = extractDocumentLinks($, new URL(page.url).origin, $(".content .field-item"));
 
     return {
         policyEntities: [

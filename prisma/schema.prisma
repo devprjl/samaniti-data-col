@@ -91,11 +91,17 @@ model Document {
   storagePath    String?       @map("storage_path")
   policyEntityId String?       @map("policy_entity_id")
   ocrData        String?       @map("ocr_data")
+  ocrStatus      String        @default("pending") @map("ocr_status")
+  ocrError       String?       @map("ocr_error")
+  ocrEngine      String?       @map("ocr_engine")
+  ocrCompletedAt DateTime?     @map("ocr_completed_at")
   createdAt      DateTime      @default(now()) @map("created_at")
   downloadError  String?       @map("download_error")
   downloadStatus String        @default("pending") @map("download_status")
+  metadata       Json?         @map("metadata")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   policyEntity   PolicyEntity? @relation(fields: [policyEntityId], references: [id], onDelete: Cascade)
 
+  @@index([ocrStatus])
   @@map("documents")
 }

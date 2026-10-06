@@ -1,3 +1,5 @@
+import type { DocumentMetadata } from "../utils/pdf-metadata.js";
+
 export interface MunicipalityData {
     code: string;
     nameNe: string;
@@ -24,6 +26,15 @@ export interface MunicipalityProfileData {
 /** Possible states for a document download attempt. */
 export type DownloadStatus = "pending" | "ok" | "failed" | "skipped";
 
+/**
+ * Possible states for a document's OCR pass.
+ *
+ * "queued" is set by the producer when it claims the document and cleared by the
+ * worker when it picks the job up, which is what keeps a document from being
+ * queued twice.
+ */
+export type OcrStatus = "pending" | "queued" | "processing" | "completed" | "failed" | "skipped";
+
 export interface DocumentData {
     fileName: string;
     fileType?: string | null;
@@ -33,6 +44,18 @@ export interface DocumentData {
     downloadStatus: DownloadStatus;
     /** Human-readable error message when downloadStatus is "failed" */
     downloadError?: string | null;
+    /**
+     * Facts about the file learned by probing it, chiefly `pageCount`. The OCR
+     * queue orders by page count so short documents are converted first. A null
+     * pageCount means "could not be read", which the ordering treats as unknown
+     * rather than as zero.
+     */
+    metadata?: DocumentMetadata | null;
+    ocrData?: string | null;
+    ocrStatus?: OcrStatus;
+    ocrError?: string | null;
+    ocrEngine?: string | null;
+    ocrCompletedAt?: Date | null;
 }
 
 export interface PolicyEntityData {

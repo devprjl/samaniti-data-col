@@ -7,6 +7,7 @@ import RouteConfigInspector from "../components/RouteConfigInspector";
 import RunLog from "../components/RunLog";
 import { SCRAPER_WORKSPACE_DISABLED } from "../lib/api";
 import {
+    ActionButton,
     Badge,
     CategoryBadge,
     EmptyState,
@@ -15,7 +16,6 @@ import {
     SearchField,
     SectionHeading,
     SelectField,
-    Spinner,
 } from "../components/Primitives";
 import { getScraperRun, getScraperWorkspace, startScraperRun } from "../lib/api";
 import { formatNumber, pluralize } from "../lib/format";
@@ -23,7 +23,6 @@ import { collectRouteRecords, groupRoutesByName, normalizeRouteKey } from "../li
 import { useRouter } from "../lib/router";
 
 const POLL_INTERVAL_MS = 1500;
-const RUN_PHASE_LABEL = { starting: "Starting…", running: "Running…" };
 
 function parseWorkspacePath(pathname) {
     const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -55,31 +54,6 @@ function RunStatusDot({ run }) {
     );
 }
 
-/**
- * Launch control for the scraper CLI. The phase turns the same button into the
- * progress indicator for the request it triggered, so the operator can see which
- * of the competing run controls is already busy. `context` names the target for
- * assistive technology, since several of these buttons share the same label.
- */
-function RunButton({ className, context, disabled, iconSize = 14, label, onClick, phase, title }) {
-    const text = phase ? RUN_PHASE_LABEL[phase] : label;
-
-    return (
-        <button
-            aria-busy={phase ? true : undefined}
-            aria-label={context ? `${text} ${context}` : undefined}
-            className={className}
-            disabled={disabled}
-            onClick={onClick}
-            title={phase ? text : title}
-            type="button"
-        >
-            {phase ? <Spinner size={iconSize} /> : <Icon name="play" size={iconSize} />}
-            {text}
-        </button>
-    );
-}
-
 function RouteRow({ routeGroup, records, run, isSelected, onSelect, onRun, disabled, phase }) {
     return (
         <li className={`route-row${isSelected ? " route-row-active" : ""}`}>
@@ -96,7 +70,7 @@ function RouteRow({ routeGroup, records, run, isSelected, onSelect, onRun, disab
                     </span>
                 </span>
             </button>
-            <RunButton
+            <ActionButton
                 className="button button-secondary button-small route-row-run"
                 context={`route ${routeGroup.routeName}`}
                 disabled={disabled}
@@ -479,7 +453,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                     Open public page <Icon name="arrow-right" size={15} />
                                 </a>
                             )}
-                            <RunButton
+                            <ActionButton
                                 className="button button-secondary"
                                 context={`every route of ${target.key}`}
                                 disabled={isBusy || !target.runnable}
@@ -608,7 +582,7 @@ export default function WorkspacePage({ policies, onDataChanged }) {
                                             ]}
                                             value={paginationMode}
                                         />
-                                        <RunButton
+                                        <ActionButton
                                             className="button button-primary"
                                             context={activeRouteGroup.key}
                                             disabled={isBusy}

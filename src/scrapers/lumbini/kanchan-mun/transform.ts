@@ -10,7 +10,6 @@ import {
     parseNepaliFiscalYear,
     extractTitle,
     extractDocumentLinks,
-    buildDocument,
     extractFiscalYear,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
@@ -87,14 +86,12 @@ async function transformReportRow(
     const rawSourceUrl = $titleLink.attr("href") || "";
     const publishedDate = row.find(".views-field-created .field-content").text().trim() || null;
 
-    const rawFileUrl = row.find(".views-field-field-documents a").attr("href") || null;
-
     const sourceUrl = rawSourceUrl.startsWith("http") ? rawSourceUrl : `${baseUrl}${rawSourceUrl}`;
 
-    const documents: DocumentData[] = [];
-    if (rawFileUrl) {
-        documents.push(await buildDocument(rawFileUrl, baseUrl, titleNe, publishedDate));
-    }
+    // Scoped to the row. The scanner already treats `.field-name-field-documents`
+    // as a file container, so this finds the same attachment the old
+    // `.views-field-field-documents a` selector did.
+    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -117,7 +114,6 @@ async function transformNoticeRow(
 ): Promise<PolicyEntityData> {
     const titleEl = row.find("h2 a");
     const dateEl = row.find('.meta.submitted span[property="dc:date dc:created"]');
-    const docEl = row.find(".field-name-field-documents a");
 
     const titleNe = titleEl.text().trim() || "";
     const rawLink = titleEl.attr("href") || "";
@@ -129,14 +125,8 @@ async function transformNoticeRow(
 
     const publishedDate = dateEl.attr("content") || dateEl.text().trim() || null;
 
-    const documents: DocumentData[] = [];
-    const docHref = docEl.attr("href");
-    if (docHref) {
-        const fullDocUrl = docHref.startsWith("http") ? docHref : `${baseUrl}${docHref}`;
-        documents.push(
-            await buildDocument(fullDocUrl, baseUrl, docEl.text().trim() || titleNe, publishedDate),
-        );
-    }
+    // Scoped to the row, for the same reason as above.
+    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,

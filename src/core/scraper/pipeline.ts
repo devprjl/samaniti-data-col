@@ -1,8 +1,29 @@
 import { RouteConfig, ScrapedPage, ScraperConfig } from "../contracts/scraper.interface.js";
 import { EtlPayload } from "../types/domain.js";
 import { recordScraperRun } from "../db/loader.js";
+import { resolveDocumentMetadata } from "../utils/pdf-metadata.js";
 import { getRouteName, selectRoutes } from "./route-selection.js";
 import { PaginationSetting, resolvePaginationSetting } from "./settings.js";
+
+/**
+ * Whether a crawl measures its documents before writing them.
+ *
+ * On by default. The page count it records is what lets the OCR queue convert the
+ * shortest documents first instead of whatever happened to be queued, so a
+ * document written without one is a document the queue cannot cost.
+ *
+ * It is not free. Each document is one request to a municipal web server, and those
+ * are slow -- 7-20 seconds measured against this collection. A page with forty
+ * documents adds roughly a minute of waiting to the crawl, spent on I/O rather than
+ * on CPU, so it overlaps poorly with the crawler's own requests.
+ *
+ * Set OCR_PROBE_DURING_SCRAPE=false to turn it off and leave the counting to
+ * `npm run ocr:pages`, which reaches the same documents with a longer timeout and
+ * without slowing the crawl. Documents written without a count are not lost either
+ * way: the OCR queue probes anything unmeasured before it claims it.
+ */
+const PROBE_DURING_SCRAPE =
+    (process.env.OCR_PROBE_DURING_SCRAPE ?? "true").toLowerCase() !== "false";
 
 /**
  * The single execution path for every municipality scraper.
@@ -99,6 +120,18 @@ export async function runScraperPipeline(
         for (const page of pages) {
             try {
                 const partialData = await transform([page]);
+
+                // Documents reach here by several routes, and only one of them probes
+                // as it builds the document. This is the single point every document
+                // passes through, so it is where the rest are measured.
+                if (PROBE_DURING_SCRAPE && partialData.policyEntities?.length) {
+                    for (const entity of partialData.policyEntities) {
+                        if (entity.documents?.length) {
+                            await resolveDocumentMetadata(entity.documents);
+                        }
+                    }
+                }
+
                 const res = await load(partialData);
                 if (res) {
                     summary.itemsAdded += res.itemsAdded;
@@ -135,6 +168,17 @@ export async function runScraperPipeline(
             itemsUpdated: summary.itemsUpdated,
             error: summary.error,
         });
+
+        // Loading may have opened the OCR queue connection (ENABLE_AUTO_OCR).
+        // This is the one exit point every scraper run passes through -- the CLI
+        // spawns each scraper as its own process and the workspace runs them in
+        // background tasks -- so releasing it here stops both from hanging on a
+        // live socket after the run has finished. Imported lazily so a scraper
+        // that never touches the queue does not load the Redis client at all.
+        if (process.env.ENABLE_AUTO_OCR === "true") {
+            const { closeRedisClient } = await import("../queue/redis.js");
+            await closeRedisClient().catch(() => {});
+        }
     }
 
     return summary;

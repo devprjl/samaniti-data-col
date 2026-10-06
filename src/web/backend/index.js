@@ -27,34 +27,13 @@ const runningOnServerlessHost =
     Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
     Boolean(process.env.FUNCTION_TARGET);
 
-/**
- * Whether the scraper workspace is served.
- *
- * Running a scrape is not a read operation: it spawns crawlers against live
- * government portals from this host's IP address, and the CLI will run one worker
- * per CPU core. A public instance must never expose it, so production refuses.
- *
- * NODE_ENV is the switch, and it is the only one a deployment has to think
- * about: set it to production and the workspace is unmounted, leave it and the
- * workspace is available to whoever reaches the port. That asymmetry is
- * deliberate. This is not a build-time switch and it does not change how the
- * portal is built, it is a runtime guard on a write operation, so the safe
- * direction is the one where forgetting it is loud rather than the one where
- * forgetting it is silent and public.
- *
- * The serverless check is the backstop for a host that leaves NODE_ENV unset.
- * Vercel does not set it for the runtime, so a deployment that sets nothing at
- * all would otherwise read as development.
- */
-const scraperWorkspaceEnabled = process.env.NODE_ENV !== "production" && !runningOnServerlessHost;
-
 const app = express();
 const adapter = new PrismaPg(process.env.DATABASE_URL);
 const prisma = new PrismaClient({ adapter });
 
-// Imported after the environment is loaded, and only when enabled: the workspace
-// router pulls in the scraper pipeline, which opens its own Prisma client on
-// import. Loading it in a read-only deployment would add a second database
+// Imported after the environment is loaded, and only when NODE_ENV allows it: the
+// workspace router pulls in the scraper pipeline, which opens its own Prisma client
+// on import. Loading it in a read-only deployment would add a second database
 // connection and the whole crawler stack for routes that cannot be called.
 //
 // A failure here is caught rather than allowed to escape. This runs at module
@@ -62,9 +41,26 @@ const prisma = new PrismaClient({ adapter });
 // request and turn an optional feature into a total outage: the registry throws
 // when it cannot find src/scrapers, which is exactly what happens wherever the
 // repository is not checked out. The workspace is optional, so losing it costs
-// the two /api/workspace routes and nothing else.
+// the /api/workspace routes and nothing else.
+//
+// NODE_ENV is the switch. `production` unmounts /api/workspace and answers 403
+// instead; anything else serves it to whoever reaches the port. Running a scrape is
+// not a read operation -- it spawns crawlers against live government portals from
+// this host's address, and the CLI runs one worker per CPU core -- and queueing OCR
+// work is a write plus a processor-heavy handoff to the worker. A public instance
+// must never expose either.
+//
+// The asymmetry is deliberate. This is not a build-time switch and it does not
+// change how the portal is built; it is a runtime guard, so the safe direction is
+// the one where forgetting it is loud rather than the one where forgetting it is
+// silent and public.
+//
+// runningOnServerlessHost is the backstop for a host that leaves NODE_ENV unset.
+// Vercel does not set it for the runtime, so a deployment that sets nothing at all
+// would otherwise read as development and expose a crawler from a function that
+// cannot even crawl.
 let workspaceRouter = null;
-if (scraperWorkspaceEnabled) {
+if (process.env.NODE_ENV !== "production" && !runningOnServerlessHost) {
     try {
         const { createWorkspaceRouter } = await import("./workspace/router.js");
         workspaceRouter = createWorkspaceRouter(prisma);

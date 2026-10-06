@@ -1,0 +1,20 @@
+# Prettier formats the JavaScript and TypeScript in this repository. Everything
+# below is either not ours to format or would be ruined by it.
+
+# Dependencies and build output
+node_modules/
+dist/
+storage/
+
+# The Python OCR service has its own formatter (ruff) and its own config.
+# services/ocr/README.md and pyproject.toml in particular would be rewritten into
+# the repository's 4-space JavaScript style otherwise.
+services/ocr/
+
+# Generated lockfiles and vendored manifests
+package-lock.json
+**/package-lock.json
+
+# Checked by `npm run format:check` in CI, but never rewritten: a formatter that
+# silently reformats its own config makes the check pass without fixing anything.
+.prettierrc

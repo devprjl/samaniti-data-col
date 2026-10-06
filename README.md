@@ -18,9 +18,17 @@ searched and compared across municipalities.
 | Node.js    | 22.19 or newer                               |
 | npm        | 10 or newer                                  |
 | PostgreSQL | 14 or newer, running somewhere you can reach |
+| Redis      | 5 or newer, only for the OCR queue           |
+| Python     | 3.13, only for the OCR service               |
 
 You do not need a database host of your own for the website — the live site uses a
 managed one.
+
+[`mise.toml`](mise.toml) pins the Node and Python versions. Run `mise install` and
+you have the right ones.
+
+Only the OCR service needs Python, Redis and the two together. If you are collecting
+records and reading them on the website, you can ignore the rest of this page.
 
 ---
 
@@ -30,7 +38,10 @@ managed one.
 git clone https://github.com/itzzsauravp/samaniti-data-col.git
 cd samaniti-data-col
 npm install
+npx playwright install chromium
 ```
+
+> **Note**: `npx playwright install chromium` is required if you plan to run scrapers locally. Some portals (like Harion Municipality) load PDFs dynamically from external CDNs (`lgwebprimarycdn.gov.np`), which the scraper intercepts via headless Chromium. The npm package alone does not download the browser binaries.
 
 Now tell it where your database is, by copying the example file and editing it:
 
@@ -73,6 +84,36 @@ nobody can start a crawl from the public site.
 To deploy, push to `master`. Vercel builds it. The only two settings the project
 needs are `DATABASE_URL` and `NODE_ENV=production`.
 
+### The OCR service is deployed separately
+
+Vercel is the wrong place for OCR. Converting a PDF is measured in minutes per page and
+holds the document in memory, and a serverless function is killed on a timer.
+
+So the OCR service runs as a container on an ordinary machine, with the queue in Redis
+between it and the scraper:
+
+```bash
+cp .env.example .env      # set POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+docker compose up -d      # postgres, redis, and the OCR service
+```
+
+That brings up three containers. The OCR service answers on http://localhost:5050, and
+`GET /health` reports whether it can actually reach Redis and the database rather than
+just whether the process is alive.
+
+The scraper is not part of that stack. It is a batch job, so it gets its own image —
+Chromium and all — which you start when you want to crawl:
+
+```bash
+docker compose --profile scraper run --rm app npm run scraper lumbini:banganga
+```
+
+A CPU machine is enough. One page takes about a minute on eight cores, so the whole
+reachable backlog is a day of compute rather than something that needs a GPU.
+
+How any of this actually works is in the
+[OCR pipeline guide](docs/ocr-pipeline-guide.md).
+
 ---
 
 ## Environment variables
@@ -82,6 +123,16 @@ needs are `DATABASE_URL` and `NODE_ENV=production`.
 | `DATABASE_URL`       | everywhere, required | Where the database is.                                                               |
 | `NODE_ENV`           | deployment only      | Set it to `production`. This is what stops the site from being able to run scrapers. |
 | `SCRAPER_PAGINATION` | optional             | `true` to follow "next page" links as well. Off by default.                          |
+| `ENABLE_AUTO_OCR`    | optional             | `true` to queue every document the scraper writes. Off by default; see OCR below.    |
+| `REDIS_URL`          | OCR only             | Where the job queue is. Must match what the OCR service reads.                       |
+| `OCR_QUEUE_NAME`     | OCR only             | The Redis list jobs travel on. Defaults to `ocr:jobs`.                               |
+| `POSTGRES_USER`      | compose only         | Required by `docker-compose.yml`. Has no default, on purpose.                        |
+| `POSTGRES_PASSWORD`  | compose only         | Required by `docker-compose.yml`. Has no default, on purpose.                        |
+| `POSTGRES_DB`        | compose only         | Required by `docker-compose.yml`. Has no default, on purpose.                        |
+
+`.env.example` lists all of them with comments. The three `POSTGRES_*` variables have
+no fallback value because a compose file that invents a database password will start a
+database that nobody, including you, can reach.
 
 On the live site you need two, and nothing else:
 
@@ -97,20 +148,48 @@ to the end of the URL.
 
 ## Running a scraper
 
-From the command line, on your machine:
+> **Note**: Scrapers that resolve dynamic assets from government CDNs (such as `madesh:harion`) use Playwright in headless mode. Make sure you ran `npx playwright install chromium` before running them.
 
 ```bash
 npm run scraper                    # every municipality in both provinces
 npm run scraper madhesh            # every municipality in one province
 npm run scraper lumbini:banganga   # one municipality
+npm run scraper madesh:harion      # single municipality scraper
 ```
 
-The scraper prints what it finds as it goes, and a summary at the end. Every run is
-also recorded in the database, which is where the site's "Collection activity" page
-gets its data.
+How the scraper works, stage by stage, is in the
+[scraper pipeline guide](docs/scraper-pipeline-guide.md).
 
-Records land in your database straight away — run a scraper and refresh the website
-to see them.
+---
+
+## Reading scanned documents with OCR
+
+Most of these portals publish notices as scans of signed paperwork. The database has
+the file; it does not have the words in it. OCR fills that in.
+
+The scraper does not do this itself. It writes a document to the database and puts a
+job on a Redis list. A Python service takes the job off, converts the file to Markdown,
+and writes the text back into `documents.ocr_data`. Neither side talks to the other
+directly, so the scraper never waits on a conversion and the conversion never fails a
+scrape.
+
+```bash
+npm run ocr:enqueue -- --limit 100   # fill the queue, once
+npm run ocr:worker                    # convert, until you stop it
+```
+
+`npm run dev` runs the web app and the worker together. The same queue can be filled
+and watched from the **OCR workspace** page in development.
+
+The queue converts the shortest documents first, so a one-page notice is not left
+waiting behind a long gazette. The OCR is EasyOCR and Docling; there is nothing to
+choose or configure.
+
+Everything else — why the queue exists, how the ordering works, and what to do when a
+document's website has disappeared — is in the
+[OCR pipeline guide](docs/ocr-pipeline-guide.md).
+
+---
 
 ## Using the website
 
@@ -129,8 +208,11 @@ The website is read-only. It has a few pages:
 
 - [Project structure and architecture](docs/project-structure.md) — what each folder
   is for and how the pieces fit together
-- [ETL pipeline guide](docs/etl-pipeline-guide.md) — how a page on a government
-  website becomes a row in the database, step by step
+- [Scraper pipeline guide](docs/scraper-pipeline-guide.md) — how a page on a
+  government website becomes a row in the database, step by step
+- [OCR pipeline guide](docs/ocr-pipeline-guide.md) — how a stored document becomes
+  readable text, and how the queue orders that work
+- [OCR service](services/ocr/README.md) — the service itself, file by file
 
 ---
 

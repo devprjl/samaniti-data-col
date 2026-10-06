@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# Python version
+#
+#   Requires Python 3.10 - 3.13.   Recommended: 3.13
+#
+# Setup with mise:
+#   mise use python@3.13
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+# ---------------------------------------------------------------------------
+
+# The OCR stack. The [easyocr] extra brings in EasyOCR itself, which is the only
+# text-recognition engine this service uses. Docling does the layout, reading
+# order and table rebuilding around it.
+docling[easyocr]>=2.28.0
+
+
+# Pipeline integration & database dependencies
+redis>=5.0.0
+psycopg[binary]>=3.2.0
+flask>=3.0.0
+python-dotenv>=1.0.0
+
+# The worker downloads each document with requests, and ocr/pipeline.py renders
+# PDF pages to images with pypdfium2 to sidestep the broken font encodings in
+# these government PDFs. Both were previously only reachable as transitive
+# dependencies of docling, which is not something to rely on.
+requests>=2.31.0
+pypdfium2>=4.30.0
+

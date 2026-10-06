@@ -13,6 +13,7 @@ import MunicipalityPage from "./pages/MunicipalityPage";
 import OverviewPage from "./pages/OverviewPage";
 import PolicyDetailPage from "./pages/PolicyDetailPage";
 import WorkspacePage from "./pages/WorkspacePage";
+import OcrWorkspacePage from "./pages/OcrWorkspacePage";
 import RunDetailPage from "./pages/RunDetailPage";
 
 const emptyPortalData = {
@@ -48,6 +49,9 @@ function parseRoute(pathname) {
             municipality: segments[2] || null,
             route: segments[3] || null,
         };
+    }
+    if (segments[0] === "ocr-workspace") {
+        return { page: "ocr-workspace" };
     }
 
     return { page: "not-found" };
@@ -336,6 +340,8 @@ function App() {
         page = <MethodologyPage coverage={coverage} />;
     } else if (route.page === "workspace") {
         page = <WorkspacePage onDataChanged={loadData} policies={policies} />;
+    } else if (route.page === "ocr-workspace") {
+        page = <OcrWorkspacePage />;
     } else {
         page = <NotFoundPage pathname={pathname} />;
     }

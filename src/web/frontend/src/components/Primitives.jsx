@@ -45,9 +45,9 @@ export function StatCard({ icon, label, value, detail, tone = "green" }) {
     );
 }
 
-export function Badge({ children, tone = "slate", dot = false }) {
+export function Badge({ children, className = "", tone = "slate", dot = false }) {
     return (
-        <span className={`badge badge-${tone}`}>
+        <span className={`badge badge-${tone} ${className}`.trim()}>
             {dot && <span className="badge-dot" />}
             {children}
         </span>
@@ -308,6 +308,69 @@ export function SelectField({ label, value, onChange, options, name }) {
                 ))}
             </select>
             <Icon name="chevron-down" size={15} />
+        </label>
+    );
+}
+
+const ACTION_PHASE_LABEL = {
+    starting: "Starting…",
+    running: "Running…",
+    queueing: "Queueing…",
+};
+
+/**
+ * Action control that doubles as the progress indicator for the request it started.
+ *
+ * The phase turns the label into a spinner, so the operator can see which of the
+ * competing controls is already busy instead of guessing from a disabled button.
+ * `context` names the target for assistive technology, since several of these
+ * buttons share the same label.
+ */
+export function ActionButton({
+    busyLabel,
+    className,
+    context,
+    disabled,
+    iconName = "play",
+    iconSize = 14,
+    label,
+    onClick,
+    phase = null,
+    title,
+}) {
+    const text = phase ? busyLabel || ACTION_PHASE_LABEL[phase] || "Working…" : label;
+
+    return (
+        <button
+            aria-busy={phase ? true : undefined}
+            aria-label={context ? `${text} ${context}` : undefined}
+            className={className}
+            disabled={disabled}
+            onClick={onClick}
+            title={phase ? text : title}
+            type="button"
+        >
+            {phase ? <Spinner size={iconSize} /> : <Icon name={iconName} size={iconSize} />}
+            {text}
+        </button>
+    );
+}
+
+export function NumberField({ label, max, min = 1, name, onChange, value }) {
+    return (
+        <label className="field-control field-control-number" htmlFor={name}>
+            <span className="sr-only">{label}</span>
+            <input
+                id={name}
+                inputMode="numeric"
+                max={max}
+                min={min}
+                name={name}
+                onChange={onChange}
+                step={1}
+                type="number"
+                value={value}
+            />
         </label>
     );
 }

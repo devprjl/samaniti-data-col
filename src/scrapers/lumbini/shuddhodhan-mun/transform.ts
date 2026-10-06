@@ -11,7 +11,6 @@ import {
     extractTitle,
     extractDocumentLinks,
     extractDate,
-    buildDocument,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
 
@@ -153,12 +152,14 @@ async function transformNoticeRow(
             : `${baseUrl}${docHref}`
         : "";
 
-    const docName = docEl.text().trim() || titleNe;
-
-    const documents: DocumentData[] = [];
-    if (fullDocUrl) {
-        documents.push(await buildDocument(fullDocUrl, baseUrl, docName, null));
-    }
+    // Scoped to the row. The scanner already treats `.field-name-field-documents`
+    // as a file container, so this finds the same attachment.
+    //
+    // sourceUrl above still comes from the raw href rather than from
+    // documents[0].originalUrl on purpose: sourceUrl is this policy's unique key,
+    // so reformatting it would insert a second row for a page already collected
+    // instead of updating the one that exists.
+    const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
 
     const fiscalYear = fiscalYearEl.text().trim() || null;
 

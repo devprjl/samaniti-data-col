@@ -3,7 +3,17 @@ import prettierConfig from "eslint-config-prettier";
 
 export default [
     {
-        ignores: ["node_modules/**", "dist/**", "coverage/**", "storage/**", "src/web/**"],
+        ignores: [
+            "node_modules/**",
+            "dist/**",
+            "coverage/**",
+            "storage/**",
+            // Own linter and oxlint setup.
+            "src/web/**",
+            // Python package: no JavaScript in it, and .venv is a symlink that
+            // would otherwise be walked in full on every lint.
+            "services/**",
+        ],
     },
     ...tsPlugin.configs["flat/recommended"],
     prettierConfig,
