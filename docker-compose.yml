@@ -27,7 +27,7 @@ services:
         ports:
             - "${POSTGRES_PORT:-5432}:5432"
         volumes:
-            - pgdata:/var/lib/postgresql/data
+            - pgdata:/var/lib/postgresql
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
             interval: 5s
@@ -84,7 +84,6 @@ services:
     # to crawl, run a scrape, and stop it again. It needs Chromium, which is why it
     # is a separate image from the OCR service.
     app:
-        profiles: ["scraper"]
         build:
             context: .
             dockerfile: Dockerfile
@@ -96,6 +95,10 @@ services:
             REDIS_URL: redis://redis:6379/0
             ENABLE_AUTO_OCR: "true"
             SCRAPER_PAGINATION: ${SCRAPER_PAGINATION:-false}
+            # Serves /api/workspace, which is both the scraper and the OCR workspace.
+            # production refuses both with a 403. This stack runs them on purpose, so
+            # the default is development; set NODE_ENV=production in .env to get the
+            # read-only behaviour back.
             NODE_ENV: ${NODE_ENV:-development}
         ports:
             - "${API_PORT:-5001}:5001"

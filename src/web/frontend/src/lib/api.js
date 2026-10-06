@@ -113,4 +113,38 @@ export function getScraperRun(runId) {
     return apiRequest(`/api/workspace/runs/${encodeURIComponent(runId)}`);
 }
 
+/** OCR backlog by status, per-municipality pending counts and the Redis queue depth. */
+export function getOcrWorkspace() {
+    return apiRequest("/api/workspace/ocr/status");
+}
+
+/**
+ * The documents the next enqueue would take, in queue order.
+ *
+ * A preview, not a reservation: it claims nothing, so another producer can move
+ * the list between this call and the enqueue that follows it.
+ */
+export function getOcrDocuments({ limit = 50, municipalityCode = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (municipalityCode) query.set("municipalityCode", municipalityCode);
+    return apiRequest(`/api/workspace/ocr/documents?${query}`);
+}
+
+/**
+ * Pushes documents onto the Redis OCR job queue.
+ *
+ * `all` sweeps the entire eligible backlog in one request; otherwise `limit`
+ * caps the batch. `municipalityCode` narrows the scope on top of either.
+ */
+export function enqueueOcrJobs({ all = false, limit = 50, municipalityCode = null } = {}) {
+    return apiRequest("/api/workspace/ocr/enqueue", {
+        method: "POST",
+        body: JSON.stringify({
+            all,
+            limit,
+            municipalityCode: municipalityCode || undefined,
+        }),
+    });
+}
+
 export { API_BASE_URL };

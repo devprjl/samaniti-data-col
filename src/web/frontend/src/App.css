@@ -773,6 +773,11 @@ body {
     background: var(--violet-soft);
 }
 
+.stat-card-rose .stat-icon {
+    color: var(--red);
+    background: var(--red-soft);
+}
+
 .stat-value {
     display: block;
     margin-top: 12px;
@@ -1019,6 +1024,10 @@ body {
     background: var(--violet);
 }
 
+.metric-bar-slate {
+    background: #a9b6ae;
+}
+
 .mix-panel {
     display: flex;
     flex-direction: column;
@@ -1128,10 +1137,17 @@ body {
     text-transform: capitalize;
 }
 
+/* Badges label short states, so each word is capitalised by default. This opts a
+   badge out where the text is a sentence with a number in it. */
+.badge-sentence {
+    text-transform: none;
+}
+
 .badge-dot {
     width: 5px;
     height: 5px;
     border-radius: 50%;
+
     background: currentColor;
 }
 
@@ -3582,6 +3598,364 @@ body {
     color: #8fa99a;
 }
 
+/* ---------------------------------------------------------------------------
+   OCR workspace
+   Same vocabulary as the scraper workspace above: stat cards, metric bars, the
+   dark console, and the target panel that holds the scope filters and the action.
+   --------------------------------------------------------------------------- */
+
+.ocr-panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 24px 0;
+}
+
+.ocr-stats-grid {
+    padding: 0 24px;
+}
+
+.ocr-breakdown {
+    display: grid;
+    gap: 11px;
+    padding: 20px 24px 22px;
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+}
+
+.ocr-breakdown-label {
+    margin: 0 0 2px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.ocr-unlinked-note {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.ocr-scope-meta {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.ocr-batch-field {
+    display: flex;
+    min-width: 0;
+    flex: 0 1 auto;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ocr-batch-field > label {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.ocr-batch-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ocr-batch-field .field-control {
+    /* The filter row hands its `.field-control` children a 220px flex basis, which
+       in this column would be read as a height. Pin it back to one row. */
+    height: 36px;
+    min-width: 108px;
+    flex: 0 0 auto;
+}
+
+.ocr-batch-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ocr-batch-preset {
+    min-height: 26px;
+    padding: 0 9px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.ocr-batch-preset:hover {
+    color: var(--ink);
+    border-color: var(--line-strong);
+}
+
+.ocr-batch-preset[aria-pressed="true"] {
+    color: var(--brand-dark);
+    border-color: #c8ded0;
+    background: var(--brand-soft);
+}
+
+.field-control-number input {
+    width: 100%;
+    height: 100%;
+    padding: 0 10px;
+    color: var(--ink-soft);
+    border: 0;
+    outline: 0;
+    appearance: textfield;
+    background: transparent;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.field-control-number input::-webkit-outer-spin-button,
+.field-control-number input::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+}
+
+.ocr-notice {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 12px 14px;
+    border: 1px solid;
+    border-radius: 7px;
+    font-size: 11px;
+}
+
+.ocr-notice-green {
+    color: var(--brand-dark);
+    border-color: #c8ded0;
+    background: var(--brand-soft);
+}
+
+.ocr-notice-amber {
+    color: #916221;
+    border-color: #ead8b8;
+    background: var(--amber-soft);
+}
+
+.ocr-notice-icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.ocr-notice > div {
+    min-width: 0;
+    flex: 1;
+}
+
+.ocr-notice strong {
+    display: block;
+    font-size: 11px;
+}
+
+.ocr-notice p {
+    margin: 3px 0 0;
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.ocr-history {
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    list-style: none;
+}
+
+.ocr-history-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 57px;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--line);
+}
+
+.ocr-history-row:last-child {
+    border-bottom: 0;
+}
+
+.ocr-history-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ocr-history-copy strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ocr-history-copy span {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ocr-history-queue {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ocr-documents {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.ocr-documents-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ocr-documents-count {
+    display: block;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.ocr-documents-scope {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+/* Scrolls rather than paginates: the point is to skim a long list of URLs, and
+   a page number would break that without telling the operator anything extra. */
+.ocr-document-list {
+    max-height: 420px;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    list-style: none;
+}
+
+.ocr-document-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 13px;
+    border-bottom: 1px solid var(--line);
+}
+
+.ocr-document-row:last-child {
+    border-bottom: 0;
+}
+
+.ocr-document-row:hover {
+    background: var(--surface-tint);
+}
+
+.ocr-document-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ocr-document-copy > strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The URL wraps instead of being clipped: a URL cut off mid-host cannot be read
+   or copied, which defeats the reason the list exists. */
+.ocr-document-url {
+    color: var(--blue);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.ocr-document-url:hover {
+    text-decoration: underline;
+}
+
+.ocr-document-tags {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+}
+
+.ocr-document-open {
+    white-space: nowrap;
+}
+
+.ocr-documents-error {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 13px;
+    color: #813f3f;
+    border: 1px solid #e7c3c0;
+    border-radius: var(--radius-sm);
+    background: var(--red-soft);
+    font-size: 11px;
+}
+
+.ocr-documents-error > span {
+    min-width: 0;
+    flex: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .workspace-busy-pulse {
         animation: none;
@@ -3961,6 +4335,39 @@ body {
         flex-direction: column;
         padding: 17px 16px 21px;
     }
+
+    .ocr-panel-heading {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .ocr-panel-heading .section-heading {
+        margin-bottom: 0;
+    }
+
+    .ocr-stats-grid,
+    .ocr-breakdown {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+
+    .ocr-batch-field {
+        flex: 1 1 200px;
+    }
+
+    .ocr-history-queue {
+        display: none;
+    }
+
+    .ocr-document-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .ocr-document-tags {
+        justify-content: flex-start;
+    }
 }
 
 @media (max-width: 460px) {
@@ -3979,7 +4386,6 @@ body {
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-
     .stats-grid,
     .stats-grid-detail {
         grid-template-columns: 1fr;
