@@ -38,7 +38,10 @@ records and reading them on the website, you can ignore the rest of this page.
 git clone https://github.com/itzzsauravp/samaniti-data-col.git
 cd samaniti-data-col
 npm install
+npx playwright install chromium
 ```
+
+> **Note**: `npx playwright install chromium` is required if you plan to run scrapers locally. Some portals (like Harion Municipality) load PDFs dynamically from external CDNs (`lgwebprimarycdn.gov.np`), which the scraper intercepts via headless Chromium. The npm package alone does not download the browser binaries.
 
 Now tell it where your database is, by copying the example file and editing it:
 
@@ -145,10 +148,13 @@ to the end of the URL.
 
 ## Running a scraper
 
+> **Note**: Scrapers that resolve dynamic assets from government CDNs (such as `madesh:harion`) use Playwright in headless mode. Make sure you ran `npx playwright install chromium` before running them.
+
 ```bash
 npm run scraper                    # every municipality in both provinces
 npm run scraper madhesh            # every municipality in one province
 npm run scraper lumbini:banganga   # one municipality
+npm run scraper madesh:harion      # single municipality scraper
 ```
 
 How the scraper works, stage by stage, is in the
