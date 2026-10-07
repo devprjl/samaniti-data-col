@@ -2,7 +2,6 @@ import "dotenv/config";
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { PrismaClient } from "@prisma/client";
@@ -194,6 +193,12 @@ app.get(
 );
 
 // Document download / serve endpoint.
+//
+// For now, links always redirect to the original government-portal URL
+// (`originalUrl`). Documents are also uploaded to S3 via `syncDocumentsToStorage`,
+// and their S3 paths are recorded in `storagePath`, but that field is not yet used
+// for serving — the redirect target will be switched to S3 once the upload
+// pipeline has been fully verified in production.
 app.get(
     "/api/documents/:id/download",
     asyncRoute(async (req, res) => {
@@ -205,10 +210,7 @@ app.get(
             return res.status(404).json({ error: "Document not found" });
         }
 
-        if (doc.storagePath && fs.existsSync(doc.storagePath)) {
-            return res.download(doc.storagePath, doc.fileName);
-        }
-
+        // Always use the original source URL for now.
         if (doc.originalUrl) {
             return res.redirect(doc.originalUrl);
         }

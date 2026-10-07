@@ -22,9 +22,10 @@ dist/
 # drops its queue on a clean exit, so anything here is left by a run that was
 # interrupted and nothing reads it.
 # ---------------------------------------------------------------------------
-storage/
+/storage/
 data/
 uploads/
+!src/core/storage/
 
 # ---------------------------------------------------------------------------
 # OCR service (services/ocr)

@@ -34,6 +34,13 @@ How this repository is laid out, what each module is responsible for, and which 
 | nepali-date-converter | `^3.4.0`             | —                | Bikram Sambat ↔ Gregorian conversion and fiscal-year parsing      |
 | playwright            | `^1.63.0`            | `>=20`           | Headless browser, available for portals that need rendering       |
 
+### Cloud storage
+
+| Package                | Declared / installed | Role                                                          |
+| :--------------------- | :------------------- | :------------------------------------------------------------ |
+| `@aws-sdk/client-s3`   | `^3.x`               | `PutObjectCommand`, `HeadObjectCommand` for S3 uploads        |
+| `@aws-sdk/lib-storage` | `^3.x`               | Multipart-upload helper (`Upload`) used for large attachments |
+
 ### Persistence
 
 | Package              | Declared / installed | Role                                                                      |
@@ -119,11 +126,14 @@ samaniti-data-col/
 │   │   │   ├── registry.ts         # Target discovery, key resolution, scraper instantiation
 │   │   │   ├── route-selection.ts  # Route naming and lenient route matching
 │   │   │   └── settings.ts         # Environment-driven execution settings
+│   │   ├── storage/
+│   │   │   ├── sync.ts             # syncDocumentsToStorage(): S3 upload with 3-layer deduplication
+│   │   │   └── index.ts            # Barrel re-export
 │   │   ├── types/
 │   │   │   └── domain.ts           # PolicyEntityData, DocumentData, MunicipalityData, EtlPayload
 │   │   └── utils/
 │   │       ├── document.ts         # DocumentData factory
-│   │       ├── file.ts             # Filename → extension and MIME type
+│   │       ├── file.ts             # Filename → extension, MIME type, and S3 upload helper
 │   │       ├── html.ts             # DOM scoping, dates, Drupal image un-styling
 │   │       ├── index.ts            # Barrel re-export
 │   │       ├── metadata.ts         # Scrape metadata and page-count helpers
@@ -198,10 +208,24 @@ samaniti-data-col/
 
 `PolicyEntityData`, `DocumentData`, `MunicipalityData`, `MunicipalityProfileData` and the `EtlPayload` batch container.
 
+### Cloud storage (`src/core/storage/`)
+
+`syncDocumentsToStorage(documents, destinationFolder?)` is the single entry point all municipality scrapers use to upload collected documents to AWS S3. It is a fire-and-forget call at the end of each `transform` pass.
+
+Three deduplication layers prevent re-uploading the same file:
+
+1. **In-memory check** — documents that already carry an `https://…` `storagePath` are skipped immediately; no network call is needed.
+2. **PostgreSQL batch check** — a single `findMany` query on `documents.originalUrl` recovers `storagePath` values written by earlier scraper runs. Matching documents get their `storagePath` restored without touching S3.
+3. **S3 `HeadObject` check** (in `utils/file.ts`) — before streaming a file, `HeadObjectCommand` probes the destination key; if the object already exists, the upload is skipped.
+
+Uploads land under the `samaniti-poc/` S3 prefix by default (configurable per call). The `storagePath` written to `DocumentData` (and later persisted by the loader) is the public HTTPS URL of the uploaded object.
+
+> **Current serving behaviour:** the `/api/documents/:id/download` endpoint redirects to `originalUrl` (the live government-portal URL) for now. The `storagePath` is recorded in the database but not yet used as the redire
+
 ### Utilities (`src/core/utils/`)
 
-- `html.ts` — DOM scoping, title/date extraction, and `normalizeOriginalImageUrl`, which turns Drupal derivative paths (`styles/thumbnail/public/…`) back into full-resolution originals and strips `?itok=` tokens. `extractDocumentLinks` also pulls PDFs out of embedded DFlip flipbook scripts.
-- `file.ts` — filename and MIME-type resolution for a record's attachment metadata.
+- `html.ts` — DOM scoping, title/date extraction, and `normalizeOriginalImageUrl`, which turns Drupal derivative paths (`styles/thumbnail/public/…`) back into full-resolution originals and strips `?itok=` tokens. `extractDocumentLinks` also pulls PDFs out of embedded DFlip flipbook scripts. Browser-based CDN link extraction (`extractCdnLinksViaNetwork`) is wrapped in a `try/catch` so a missing Playwright binary does not crash the scraper.
+- `file.ts` — filename and MIME-type resolution for a record's attachment metadata, plus `uploadDocumentsToS3` and `streamUrlToS3` which stream remote files directly into S3 using the AWS SDK.
 - `nepali.ts` — Bikram Sambat parsing, Gregorian conversion and fiscal-year extraction (e.g. `२०८०/०८१` → `2080/81`).
 - `pagination.ts` — `extractPaginationUrls`, reading further listing pages from the DOM's pager.
 - `url.ts` — `extractSlugFromUrl` (the origin of every route name) plus URL cleanup helpers.
@@ -379,16 +403,21 @@ control that is actually busy reports progress.
 
 ## Configuration
 
-| Variable                              | Purpose                                                                    |
-| :------------------------------------ | :------------------------------------------------------------------------- |
-| `DATABASE_URL`                        | PostgreSQL connection string. Required at import time by the loader        |
-| `SCRAPER_PAGINATION`                  | `true` walks past the first listing page on every route; default `false`   |
-| `NODE_ENV`                            | `production` refuses the scraper workspace; unset serves it on a machine   |
-| `ENABLE_AUTO_OCR`                     | `true` queues documents as the ETL writes them; default `false`            |
-| `REDIS_URL`                           | Where the OCR job queue is. Must match the OCR service's view of it        |
-| `OCR_QUEUE_NAME`                      | The Redis list jobs travel on; defaults to `ocr:jobs`                      |
-| `OCR_EVENTS_CHANNEL`                  | Pub/sub channel the worker announces `job_started`/`completed`/`failed` on |
-| `POSTGRES_USER` / `_PASSWORD` / `_DB` | Required by `docker-compose.yml`, with no defaults                         |
+| Variable                              | Purpose                                                                     |
+| :------------------------------------ | :-------------------------------------------------------------------------- |
+| `DATABASE_URL`                        | PostgreSQL connection string. Required at import time by the loader         |
+| `SCRAPER_PAGINATION`                  | `true` walks past the first listing page on every route; default `false`    |
+| `NODE_ENV`                            | `production` refuses the scraper workspace; unset serves it on a machine    |
+| `ENABLE_AUTO_OCR`                     | `true` queues documents as the ETL writes them; default `false`             |
+| `REDIS_URL`                           | Where the OCR job queue is. Must match the OCR service's view of it         |
+| `OCR_QUEUE_NAME`                      | The Redis list jobs travel on; defaults to `ocr:jobs`                       |
+| `OCR_EVENTS_CHANNEL`                  | Pub/sub channel the worker announces `job_started`/`completed`/`failed` on  |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB` | Required by `docker-compose.yml`, with no defaults                          |
+| `FILE_DOWNLOAD`                       | `true` or `1` enables `syncDocumentsToStorage`; uploading is off by default |
+| `AWS_ACCESS_KEY_ID`                   | AWS credentials for S3 uploads. Required when `FILE_DOWNLOAD=true`          |
+| `AWS_SECRET_ACCESS_KEY`               | AWS credentials for S3 uploads. Required when `FILE_DOWNLOAD=true`          |
+| `AWS_REGION`                          | AWS region for the S3 bucket (e.g. `ap-south-1`)                            |
+| `AWS_S3_BUCKET`                       | Name of the S3 bucket documents are uploaded to                             |
 
 Copy `.env.example` to `.env` and adjust. When starting the API, Crawlee's storage directory is pointed at the repository's `storage/` unless `CRAWLEE_STORAGE_DIR` is already set.
 

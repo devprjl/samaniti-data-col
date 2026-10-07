@@ -70,6 +70,14 @@ A scraper execution is five stages, all implemented in one place — `runScraper
 └──────────────────────────────┬────────────────────────────────┘
                                ▼
 ┌───────────────────────────────────────────────────────────────┐
+│ 4a. Cloud storage sync (optional)                             │
+│    - syncDocumentsToStorage() — guarded by FILE_DOWNLOAD      │
+│    - 3-layer dedup: storagePath check → DB batch → S3 HEAD   │
+│    - Uploads to S3 samaniti-poc/ prefix; writes public URL    │
+│      back to DocumentData.storagePath                         │
+└──────────────────────────────┬────────────────────────────────┘
+                               ▼
+┌───────────────────────────────────────────────────────────────┐
 │ 5. Loading — Prisma upserts on unique sourceUrl               │
 │    - Documents connectOrCreate on unique originalUrl          │
 │    - ScraperRun row written in a finally block                │
@@ -185,6 +193,22 @@ DFlip PDFs are frequently embedded in inline JavaScript rather than linked:
 ```
 
 Each attachment becomes a `DocumentData` with a decoded `fileName`, the canonical un-styled `originalUrl`, a `fileType`, and a `downloadStatus` of `skipped`. Nothing fetches the file itself, so a run is cheap and the portal serves the portal's own copy.
+
+### Cloud storage sync
+
+`syncDocumentsToStorage` (in `src/core/storage/sync.ts`) runs at the end of each transform pass in every municipality scraper. When enabled, it uploads each newly discovered document to AWS S3 and writes the resulting public HTTPS URL back to `DocumentData.storagePath` before the loader persists the record.
+
+Three deduplication layers prevent uploading the same file twice:
+
+| Layer                                  | Where                              | Cost          |
+| :------------------------------------- | :--------------------------------- | :------------ |
+| `storagePath` already an HTTP URL      | In-memory, no I/O                  | Free          |
+| PostgreSQL `findMany` on `originalUrl` | One batch query per transform pass | Cheap         |
+| S3 `HeadObjectCommand`                 | One request per genuinely new file | ~1 round-trip |
+
+All uploads land under the `samaniti-poc/` prefix by default. The function is a no-op when `process.env.VERCEL` is set or when `FILE_DOWNLOAD` is not `true`/`1`, so it is always safe to call from transform code without conditional guards.
+
+> **Current serving behaviour:** `/api/documents/:id/download` redirects to `originalUrl` (the live government-portal URL). The `storagePath` field is populated in the database but not yet used as the redirect target — that switch will be made once the upload pipeline is fully verified.
 
 ---
 
