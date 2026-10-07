@@ -146,30 +146,42 @@ export async function extractCdnLinksViaNetwork(
     cdnDomains = ["lgwebprimarycdn.gov.np"],
 ): Promise<DocumentData[]> {
     console.log("[CDN Extraction] running...");
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
+
+    let browser;
+    try {
+        browser = await chromium.launch({ headless: true });
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+            `[CDN Extraction] Playwright browser could not be launched (${msg}). Skipping network capture for ${pageUrl}.`,
+        );
+        return [];
+    }
 
     const capturedUrls = new Set<string>();
 
-    // Listen to ALL outgoing network requests (XHR, Fetch, Document loads)
-    page.on("request", (request) => {
-        const url = request.url();
-        if (cdnDomains.some((domain) => url.includes(domain))) {
-            if (url.endsWith(".pdf") || url.includes("/media/pdf_upload/")) {
-                capturedUrls.add(url);
-            }
-        }
-    });
-
     try {
+        const page = await browser.newPage();
+
+        // Listen to ALL outgoing network requests (XHR, Fetch, Document loads)
+        page.on("request", (request) => {
+            const url = request.url();
+            if (cdnDomains.some((domain) => url.includes(domain))) {
+                if (url.endsWith(".pdf") || url.includes("/media/pdf_upload/")) {
+                    capturedUrls.add(url);
+                }
+            }
+        });
+
         // Navigate and wait for network activity to settle (JS / XHR execution)
         await page.goto(pageUrl, { waitUntil: "networkidle", timeout: 30000 });
-    } catch (e) {
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
         console.warn(
-            `Timeout or error loading ${pageUrl}, processing captured links anyway. Error: ${(e as any).message}`,
+            `[CDN Extraction] Timeout or error loading ${pageUrl}, processing captured links anyway: ${msg}`,
         );
     } finally {
-        await browser.close();
+        await browser.close().catch(() => {});
     }
 
     console.log(`[CDN Extraction] Captured URLS: ${Array.from(capturedUrls)}`);

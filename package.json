@@ -54,6 +54,7 @@
     "author": "",
     "license": "MIT",
     "dependencies": {
+        "@aws-sdk/client-s3": "^3.1147.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
         "cheerio": "1.0.0-rc.12",

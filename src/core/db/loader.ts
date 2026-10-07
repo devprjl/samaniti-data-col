@@ -119,22 +119,43 @@ function buildDocumentUpsertQuery(docs?: DocumentData[]) {
 async function refreshDocumentMetadata(docs?: DocumentData[]): Promise<void> {
     if (!docs || docs.length === 0) return;
 
-    const measured = docs.filter((doc) => {
-        if (!doc.originalUrl || doc.metadata == null) return false;
-        return (doc.metadata as { reachable?: boolean | null }).reachable !== false;
+    const toUpdate = docs.filter((doc) => {
+        if (!doc.originalUrl) return false;
+        const hasValidMetadata =
+            doc.metadata != null &&
+            (doc.metadata as { reachable?: boolean | null }).reachable !== false;
+        const hasStoragePath = Boolean(doc.storagePath);
+        const hasDownloadStatus = Boolean(doc.downloadStatus && doc.downloadStatus !== "skipped");
+        return hasValidMetadata || hasStoragePath || hasDownloadStatus;
     });
-    if (measured.length === 0) return;
+    if (toUpdate.length === 0) return;
 
     // One update per document rather than a single updateMany: each carries its own
-    // metadata, so there is no one value to set them all to. Batched into one
-    // transaction so the page is not left half-measured if one write fails.
+    // metadata and storagePath. Batched into one transaction so the write is atomic.
     await prisma.$transaction(
-        measured.map((doc) =>
-            prisma.document.update({
+        toUpdate.map((doc) => {
+            const dataToUpdate: Record<string, unknown> = {};
+            if (
+                doc.metadata != null &&
+                (doc.metadata as { reachable?: boolean | null }).reachable !== false
+            ) {
+                dataToUpdate.metadata = doc.metadata;
+            }
+            if (doc.storagePath) {
+                dataToUpdate.storagePath = doc.storagePath;
+            }
+            if (doc.downloadStatus && doc.downloadStatus !== "skipped") {
+                dataToUpdate.downloadStatus = doc.downloadStatus;
+            }
+            if (doc.downloadError !== undefined) {
+                dataToUpdate.downloadError = doc.downloadError;
+            }
+
+            return prisma.document.update({
                 where: { originalUrl: doc.originalUrl! },
-                data: { metadata: doc.metadata ?? undefined },
-            }),
-        ),
+                data: dataToUpdate,
+            });
+        }),
     );
 }
 
