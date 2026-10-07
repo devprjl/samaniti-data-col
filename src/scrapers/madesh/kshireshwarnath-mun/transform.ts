@@ -14,6 +14,7 @@ import {
     extractFiscalYear,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
+import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
 export const MUNICIPALITY_CODE = "KSHIRESHWARANATH";
 
@@ -24,6 +25,8 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     province: "Madhesh",
     district: "Dhanusha",
 };
+
+const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -69,6 +72,7 @@ async function transformProjectRow(
     }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -126,6 +130,7 @@ async function transformReportRow(
     const dateCreated = dateCreatedRaw || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -171,6 +176,7 @@ async function transformNoticeRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -201,6 +207,7 @@ export async function transformProjectDetail(page: ScrapedPage): Promise<Partial
     const documents = extractDocumentLinks($, baseUrl, $context);
     const publishedDate = extractDate($);
     const fiscalYear = extractFiscalYear($);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
 
@@ -234,6 +241,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const documents = extractDocumentLinks($, baseUrl, $context);
     const publishedDate = extractDate($);
     const fiscalYear = extractFiscalYear($);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(
         `[Report Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -265,6 +273,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const documents = extractDocumentLinks($, baseUrl, $context);
     const publishedDate = extractDate($);
     const fiscalYear = extractFiscalYear($);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(
         `[Notice Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -397,6 +406,10 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
             };
         }),
     );
+
+    for (const notice of notices) {
+        await syncDocumentsToStorage(notice.documents ?? [], S3_DESTINATION_FOLDER);
+    }
 
     return { policyEntities: notices };
 }

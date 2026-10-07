@@ -13,6 +13,7 @@ import {
     extractFiscalYear,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
+import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
 export const MUNICIPALITY_CODE = "KANCHAN";
 
@@ -23,6 +24,8 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     province: "Lumbini",
     district: "Rupandehi",
 };
+
+const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -55,6 +58,7 @@ async function transformProjectRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -92,6 +96,7 @@ async function transformReportRow(
     // as a file container, so this finds the same attachment the old
     // `.views-field-field-documents a` selector did.
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -127,6 +132,7 @@ async function transformNoticeRow(
 
     // Scoped to the row, for the same reason as above.
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -150,6 +156,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
     const fiscalYear = extractFiscalYear($);
 
     return {
@@ -177,6 +184,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
     const fiscalYear = extractFiscalYear($);
 
     return {
@@ -200,6 +208,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $ = cheerio.load(page.html);
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, new URL(page.url).origin);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         policyEntities: [

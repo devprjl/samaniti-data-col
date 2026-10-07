@@ -14,6 +14,7 @@ import {
     extractCdnLinksViaNetwork,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
+import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
 export const MUNICIPALITY_CODE = "HARIWON";
 
@@ -24,6 +25,8 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     province: "Madhesh",
     district: "Sarlahi",
 };
+
+const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -69,6 +72,7 @@ async function transformProjectRow(
     }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -126,6 +130,7 @@ async function transformReportRow(
     const dateCreated = dateCreatedRaw || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -170,6 +175,7 @@ async function transformNoticeRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -196,6 +202,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
 
@@ -228,9 +235,11 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $context = $(".detail__page-inner").length ? $(".detail__page-inner") : $("body");
     const documents = extractDocumentLinks($, baseUrl, $context);
     const cdnDocs = await extractCdnLinksViaNetwork(page.url);
+    const allDocs = [...documents, ...cdnDocs];
+    await syncDocumentsToStorage(allDocs, S3_DESTINATION_FOLDER);
 
     console.log(
-        `[Report Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
+        `[Report Detail] "${titleNe}" | date: ${publishedDate} | docs: ${allDocs.length} | url: ${page.url}`,
     );
 
     return {
@@ -244,7 +253,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
                 fiscalYear: parseNepaliFiscalYear(titleNe) || null,
                 publishedDate,
                 sourceUrl: decodeURIComponent(page.url),
-                documents: [...documents, ...cdnDocs],
+                documents: allDocs,
             },
         ],
     };
@@ -260,9 +269,11 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $context = $(".detail__page-inner").length ? $(".detail__page-inner") : $("body");
     const documents = extractDocumentLinks($, baseUrl, $context);
     const cdnDocs = await extractCdnLinksViaNetwork(page.url);
+    const allDocs = [...documents, ...cdnDocs];
+    await syncDocumentsToStorage(allDocs, S3_DESTINATION_FOLDER);
 
     console.log(
-        `[Notice Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
+        `[Notice Detail] "${titleNe}" | date: ${publishedDate} | docs: ${allDocs.length} | url: ${page.url}`,
     );
 
     return {
@@ -276,7 +287,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
                 type: page.category,
                 publishedDate,
                 sourceUrl: decodeURIComponent(page.url),
-                documents: [...documents, ...cdnDocs],
+                documents: allDocs,
             },
         ],
     };

@@ -13,6 +13,7 @@ import {
     extractDate,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
+import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
 export const MUNICIPALITY_CODE = "SARAWAL";
 
@@ -23,6 +24,8 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     province: "Lumbini",
     district: "Nawalparasi",
 };
+
+const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -55,6 +58,7 @@ async function transformProjectRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -102,6 +106,7 @@ async function transformReportRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -143,6 +148,7 @@ async function transformNoticeRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -167,6 +173,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         policyEntities: [
@@ -194,6 +201,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const titleNe = extractTitle($);
     const publishedDate = extractDate($);
     const documents = extractDocumentLinks($, baseUrl, $(".content .field-item"));
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         policyEntities: [
@@ -217,6 +225,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const titleNe = extractTitle($);
     const publishedDate = $(".meta.submitted span").attr("content") || null;
     const documents = extractDocumentLinks($, new URL(page.url).origin, $(".content .field-item"));
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         policyEntities: [

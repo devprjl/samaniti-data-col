@@ -13,6 +13,7 @@ import {
     extractDate,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
+import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
 export const MUNICIPALITY_CODE = "DHANKAUL";
 
@@ -23,6 +24,8 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     province: "Madhesh",
     district: "Sarlahi",
 };
+
+const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -68,6 +71,7 @@ async function transformProjectRow(
     }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -125,6 +129,7 @@ async function transformReportRow(
     const dateCreated = dateCreatedRaw || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -170,6 +175,7 @@ async function transformNoticeRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -196,6 +202,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
 
@@ -227,6 +234,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 
     const $context = $(".detail__page-inner").length ? $(".detail__page-inner") : $("body");
     const documents = extractDocumentLinks($, baseUrl, $context);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(
         `[Report Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -257,6 +265,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $context = $(".content");
 
     const documents = extractDocumentLinks($, baseUrl, $context);
+    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
 
     console.log(
         `[Notice Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -388,6 +397,10 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
             };
         }),
     );
+
+    for (const notice of notices) {
+        await syncDocumentsToStorage(notice.documents ?? [], S3_DESTINATION_FOLDER);
+    }
 
     return { policyEntities: notices };
 }
