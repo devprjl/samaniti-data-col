@@ -445,7 +445,7 @@ export default function OcrWorkspacePage() {
                         }
                         description={
                             serverFailed
-                                ? "The API answered with an error instead of the backlog. The reason is in its log: docker logs samaniti-app. If it names a missing documents column, the database is behind prisma/schema.prisma and npm run db:push brings it up to date."
+                                ? "The API answered with an error instead of the backlog. The reason is in its log: docker logs lgwebscraper-app. If it names a missing documents column, the database is behind prisma/schema.prisma and npm run db:push brings it up to date."
                                 : "Start the backend API or check its connection settings, then retry."
                         }
                         icon="alert"

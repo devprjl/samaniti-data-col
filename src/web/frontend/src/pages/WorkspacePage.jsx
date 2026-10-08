@@ -26,7 +26,7 @@ const POLL_INTERVAL_MS = 1500;
 
 function parseWorkspacePath(pathname) {
     const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    if (segments[0] !== "workspace") return {};
+    if (segments[0] !== "scraper-workspace") return {};
 
     return {
         province: segments[1] || null,
@@ -36,8 +36,8 @@ function parseWorkspacePath(pathname) {
 }
 
 function targetPath(target, routeName) {
-    if (!target) return "/workspace";
-    const base = `/workspace/${encodeURIComponent(target.province)}/${encodeURIComponent(target.cleanMun)}`;
+    if (!target) return "/scraper-workspace";
+    const base = `/scraper-workspace/${encodeURIComponent(target.province)}/${encodeURIComponent(target.cleanMun)}`;
     return routeName ? `${base}/${encodeURIComponent(routeName)}` : base;
 }
 

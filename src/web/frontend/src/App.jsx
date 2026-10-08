@@ -42,9 +42,9 @@ function parseRoute(pathname) {
     if (segments[0] === "activity" && segments[1]) return { page: "run", id: segments[1] };
     if (segments[0] === "activity" && segments.length === 1) return { page: "activity" };
     if (segments[0] === "methodology" && segments.length === 1) return { page: "methodology" };
-    if (segments[0] === "workspace") {
+    if (segments[0] === "scraper-workspace") {
         return {
-            page: "workspace",
+            page: "scraper-workspace",
             province: segments[1] || null,
             municipality: segments[2] || null,
             route: segments[3] || null,
@@ -78,7 +78,7 @@ function NotFoundPage({ pathname }) {
         <div className="page-stack not-found-page">
             <div className="not-found-code">404</div>
             <h1>Page not found</h1>
-            <p>The requested page is not part of the Samaniti policy portal.</p>
+            <p>The requested page is not part of the LGWebScraper policy portal.</p>
             <code>{pathname}</code>
             <Link className="button button-primary" to="/">
                 Return to overview
@@ -338,7 +338,7 @@ function App() {
         );
     } else if (route.page === "methodology") {
         page = <MethodologyPage coverage={coverage} />;
-    } else if (route.page === "workspace") {
+    } else if (route.page === "scraper-workspace") {
         page = <WorkspacePage onDataChanged={loadData} policies={policies} />;
     } else if (route.page === "ocr-workspace") {
         page = <OcrWorkspacePage />;

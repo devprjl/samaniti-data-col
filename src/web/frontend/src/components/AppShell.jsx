@@ -12,8 +12,8 @@ const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
-    { to: "/workspace", label: "Scraper workspace", icon: "terminal" },
-    { to: "/ocr-workspace", label: "OCR workspace", icon: "book" },
+    // { to: "/scraper-workspace", label: "Scraper workspace", icon: "terminal" },
+    // { to: "/ocr-workspace", label: "OCR workspace", icon: "book" }, // hidden in prod
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 
@@ -30,7 +30,7 @@ function getBreadcrumbs(route, municipalityName) {
             return [{ label: "Collection activity" }];
         case "run":
             return [{ label: "Collection activity", to: "/activity" }, { label: "Run detail" }];
-        case "workspace":
+        case "scraper-workspace":
             return [
                 { label: "Scraper workspace" },
                 ...(route.province
@@ -89,7 +89,11 @@ export default function AppShell({
         <div className="app-shell">
             <aside className="sidebar">
                 <div className="sidebar-top">
-                    <Link aria-label="Samaniti policy portal home" className="brand-link" to="/">
+                    <Link
+                        aria-label="LGWebScraper policy portal home"
+                        className="brand-link"
+                        to="/"
+                    >
                         <Brand />
                     </Link>
                     <div className="sidebar-rule" />
@@ -127,7 +131,7 @@ export default function AppShell({
 
                 <div className="sidebar-bottom">
                     <div className="sidebar-meta">
-                        <span>Samaniti data portal</span>
+                        <span>LGWebScraper data portal</span>
                         <span>v1.0</span>
                     </div>
                 </div>
@@ -203,7 +207,7 @@ export default function AppShell({
                 </main>
 
                 <footer className="site-footer">
-                    <span>Samaniti Policy Portal</span>
+                    <span>LGWebScraper Policy Portal</span>
                     <span>Public data, clearly presented.</span>
                 </footer>
             </div>

@@ -45,8 +45,8 @@ export default function MethodologyPage({ coverage = [] }) {
                         <p className="eyebrow">About this portal</p>
                         <h2>Public records, with their context intact.</h2>
                         <p>
-                            Samaniti collects public information from local government portals and
-                            normalizes it into a common policy record model. This portal is
+                            LGWebScraper collects public information from local government portals
+                            and normalizes it into a common policy record model. This portal is
                             intentionally read-only: every item points back to its source page, and
                             every collection execution remains visible in the activity log.
                         </p>

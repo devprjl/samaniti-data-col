@@ -9,7 +9,7 @@ export function Brand({ compact = false }) {
                 <Icon name="mark" size={compact ? 22 : 24} strokeWidth={1.65} />
             </span>
             <span className="brand-copy">
-                <strong>Samaniti</strong>
+                <strong>LGWebScraper</strong>
                 {!compact && <span>Policy portal</span>}
             </span>
         </span>
