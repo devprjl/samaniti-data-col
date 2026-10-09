@@ -18,21 +18,20 @@ import { prisma } from "../db/loader.js";
  * - Mutates document objects in-place with their S3 public URL (`storagePath`)
  *   and sets `downloadStatus = "ok"`.
  *
- * @param documents         Array of DocumentData to sync. Modified in-place.
- * @param destinationFolder S3 folder prefix, defaults to "samaniti-poc".
+ * @param documents    Array of DocumentData to sync. Modified in-place.
+ * @param municipality Municipality slug used as the second key segment.
+ * @param category     Entity category used as the third key segment.
  */
 export async function syncDocumentsToStorage(
     documents: DocumentData[],
-    destinationFolder = "samaniti-poc",
+    municipality: string,
+    category: string | null | undefined = null,
 ): Promise<void> {
     if (!documents || documents.length === 0) return;
 
     const isVercel = Boolean(process.env.VERCEL);
-    const isFileDownloadEnabled =
-        process.env.FILE_DOWNLOAD === "true" ||
-        process.env.FILE_DOWNLOAD === "1"
 
-    if (isVercel || !isFileDownloadEnabled) return;
+    if (isVercel) return;
 
     // Filter out documents that already have an uploaded cloud URL
     const pendingDocs: DocumentData[] = [];
@@ -91,6 +90,6 @@ export async function syncDocumentsToStorage(
 
     // Upload remaining documents to S3
     if (pendingDocs.length > 0) {
-        await uploadDocumentsToS3(pendingDocs, destinationFolder);
+        await uploadDocumentsToS3(pendingDocs, municipality, category);
     }
 }

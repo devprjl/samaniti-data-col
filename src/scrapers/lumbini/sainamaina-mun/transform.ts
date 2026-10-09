@@ -25,8 +25,6 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     district: "Rupandehi",
 };
 
-const S3_DESTINATION_FOLDER = "samaniti-poc";
-
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
 // ---------------------------------------------------------------------------
@@ -49,7 +47,7 @@ async function transformProjectRow(
     // Scoped to this row, so documents belonging to other rows on the listing
     // page are not attributed to this one.
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     // A page that is itself the document. The scanner cannot find this one --
     // there is no link on the page pointing at the page -- so it is built directly.
@@ -89,7 +87,7 @@ async function transformReportRow(
     // `.field-name-field-documents`, which the scanner already treats as a file
     // container, so this finds the same link the old selector did.
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -138,7 +136,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     return {
         policyEntities: [
@@ -165,7 +163,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     return {
         policyEntities: [
@@ -188,7 +186,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const $ = cheerio.load(page.html);
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, new URL(page.url).origin);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
     return {
         policyEntities: [

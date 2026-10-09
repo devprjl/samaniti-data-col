@@ -12,7 +12,7 @@ import { transform, MUNICIPALITY_CODE } from "./transform.js";
 import { load } from "./load.js";
 import { prisma } from "../../../core/db/loader.js";
 
-export class HarionScraper implements IMunicipalityScraper {
+export class DurgabhagwatiScraper implements IMunicipalityScraper {
     public municipalityCode = MUNICIPALITY_CODE;
     public routes = ROUTES;
 
@@ -31,7 +31,7 @@ export class HarionScraper implements IMunicipalityScraper {
     async run(config?: ScraperConfig): Promise<ScraperRunSummary> {
         return runScraperPipeline(
             {
-                label: "HarionScraper",
+                label: "DurgabhagwatiScraper",
                 municipalityCode: this.municipalityCode,
                 routes: this.routes,
                 extract: (scraperConfig) => this.extract(scraperConfig),
@@ -43,14 +43,14 @@ export class HarionScraper implements IMunicipalityScraper {
     }
 }
 
-// Run directly: npx tsx src/scrapers/madesh/harion-mun/index.ts
+// Run directly: npx tsx src/scrapers/madhesh/durgabhagwati-mun/index.ts
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     (async () => {
-        const scraper = new HarionScraper();
+        const scraper = new DurgabhagwatiScraper();
         try {
             await scraper.run();
         } catch (err) {
-            console.error("[HarionScraper] Fatal error:", err);
+            console.error("[DurgabhagwatiScraper] Fatal error:", err);
             process.exit(1);
         } finally {
             await prisma.$disconnect();

@@ -12,7 +12,7 @@ import { transform, MUNICIPALITY_CODE } from "./transform.js";
 import { load } from "./load.js";
 import { prisma } from "../../../core/db/loader.js";
 
-export class EkdaraScraper implements IMunicipalityScraper {
+export class SuddhodhanScraper implements IMunicipalityScraper {
     public municipalityCode = MUNICIPALITY_CODE;
     public routes = ROUTES;
 
@@ -31,7 +31,7 @@ export class EkdaraScraper implements IMunicipalityScraper {
     async run(config?: ScraperConfig): Promise<ScraperRunSummary> {
         return runScraperPipeline(
             {
-                label: "EkdaraScraper",
+                label: "SuddhodhanScraper",
                 municipalityCode: this.municipalityCode,
                 routes: this.routes,
                 extract: (scraperConfig) => this.extract(scraperConfig),
@@ -43,14 +43,14 @@ export class EkdaraScraper implements IMunicipalityScraper {
     }
 }
 
-// Run directly: npx tsx src/scrapers/madesh/ekdara-mun/index.ts
+// Run directly: npx tsx src/scrapers/lumbini/suddhodhan-mun/index.ts
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     (async () => {
-        const scraper = new EkdaraScraper();
+        const scraper = new SuddhodhanScraper();
         try {
             await scraper.run();
         } catch (err) {
-            console.error("[EkdaraScraper] Fatal error:", err);
+            console.error("[SuddhodhanScraper] Fatal error:", err);
             process.exit(1);
         } finally {
             await prisma.$disconnect();

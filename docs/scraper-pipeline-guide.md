@@ -216,7 +216,7 @@ All uploads land under the `samaniti-poc/` prefix by default. The function is a 
 
 Writes go through Prisma against PostgreSQL:
 
-1. **Municipality upsert** — by unique `code` (e.g. `BARDAGHAT`). Note this is the code from `transform.ts`, which does not always match the folder name (`harion-mun` is `HARIWON`).
+1. **Municipality upsert** — by unique `code` (e.g. `BARDAGHAT`). Note this is the code from `transform.ts` (e.g. `HARIWON` for `hariwon-mun`).
 2. **Policy upsert** — matched on the unique `sourceUrl`; the loader first checks existence so it can report added versus updated.
 3. **Document linking** — `connectOrCreate` on the unique `originalUrl`, with in-payload deduplication to avoid unique-constraint clashes.
 4. **Document metadata** — the page-count probe's result, when there is one. See below.

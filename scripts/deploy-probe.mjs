@@ -45,7 +45,7 @@ const probes = [
         expect: [403],
         code: "scraper_workspace_disabled",
     },
-    { method: "POST", route: "/api/workspace/runs", body: { key: "madesh:ekdara" }, expect: [403] },
+    { method: "POST", route: "/api/workspace/runs", body: { key: "madhesh:ekdara" }, expect: [403] },
 ];
 
 const results = [];

@@ -193,12 +193,6 @@ app.get(
 );
 
 // Document download / serve endpoint.
-//
-// For now, links always redirect to the original government-portal URL
-// (`originalUrl`). Documents are also uploaded to S3 via `syncDocumentsToStorage`,
-// and their S3 paths are recorded in `storagePath`, but that field is not yet used
-// for serving — the redirect target will be switched to S3 once the upload
-// pipeline has been fully verified in production.
 app.get(
     "/api/documents/:id/download",
     asyncRoute(async (req, res) => {

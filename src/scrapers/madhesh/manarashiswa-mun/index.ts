@@ -12,7 +12,7 @@ import { transform, MUNICIPALITY_CODE } from "./transform.js";
 import { load } from "./load.js";
 import { prisma } from "../../../core/db/loader.js";
 
-export class KshireshwarnathScraper implements IMunicipalityScraper {
+export class ManarashiswaScraper implements IMunicipalityScraper {
     public municipalityCode = MUNICIPALITY_CODE;
     public routes = ROUTES;
 
@@ -31,7 +31,7 @@ export class KshireshwarnathScraper implements IMunicipalityScraper {
     async run(config?: ScraperConfig): Promise<ScraperRunSummary> {
         return runScraperPipeline(
             {
-                label: "KshireshwarnathScraper",
+                label: "ManarashiswaScraper",
                 municipalityCode: this.municipalityCode,
                 routes: this.routes,
                 extract: (scraperConfig) => this.extract(scraperConfig),
@@ -43,14 +43,14 @@ export class KshireshwarnathScraper implements IMunicipalityScraper {
     }
 }
 
-// Run directly: npx tsx src/scrapers/madesh/kshireshwarnath-mun/index.ts
+// Run directly: npx tsx src/scrapers/madhesh/manarashiswa-mun/index.ts
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     (async () => {
-        const scraper = new KshireshwarnathScraper();
+        const scraper = new ManarashiswaScraper();
         try {
             await scraper.run();
         } catch (err) {
-            console.error("[KshireshwarnathScraper] Fatal error:", err);
+            console.error("[ManarashiswaScraper] Fatal error:", err);
             process.exit(1);
         } finally {
             await prisma.$disconnect();

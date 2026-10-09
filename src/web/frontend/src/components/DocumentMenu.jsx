@@ -23,9 +23,9 @@ function statusMeta(status) {
  * Document count of a record, doubling as the trigger for the attached-file menu.
  *
  * A record can carry a long list of attachments, so the table only has room for the
- * count. Opening it reveals the file names, the portal URL each file came from and a
- * one-click way to copy that URL, which is what a reviewer needs to trace a collected
- * file back to the page it was scraped from.
+ * count. Opening it reveals the file names, the portal URL each file came from, a
+ * one-click way to copy the stored copy's public URL (storagePath), and a link that
+ * opens the portal URL the file was scraped from.
  */
 export default function DocumentMenu({ documents }) {
     const [anchor, setAnchor] = useState(null);
@@ -54,16 +54,17 @@ export default function DocumentMenu({ documents }) {
         }, COPY_FEEDBACK_MS);
     }
 
-    async function copySourceUrl(document) {
-        if (!(await copyToClipboard(document.originalUrl || ""))) return;
+    async function copyStorageUrl(document) {
+        const storageUrl = document.storagePath || "";
+        if (!storageUrl || !(await copyToClipboard(storageUrl))) return;
 
         setCopiedId(document.id);
         scheduleReset();
     }
 
-    async function copyEverySourceUrl() {
-        const links = files.map((file) => file.originalUrl).filter(Boolean);
-        if (!(await copyToClipboard(links.join("\n")))) return;
+    async function copyEveryStorageUrl() {
+        const links = files.map((file) => file.storagePath).filter(Boolean);
+        if (links.length === 0 || !(await copyToClipboard(links.join("\n")))) return;
 
         setAllCopied(true);
         scheduleReset();
@@ -99,11 +100,11 @@ export default function DocumentMenu({ documents }) {
                             {count > 1 && (
                                 <button
                                     className="document-menu-all"
-                                    onClick={copyEverySourceUrl}
+                                    onClick={copyEveryStorageUrl}
                                     type="button"
                                 >
                                     <Icon name={allCopied ? "check" : "copy"} size={12} />
-                                    {allCopied ? "Copied" : "Copy all links"}
+                                    {allCopied ? "Copied" : "Copy all stored URLs"}
                                 </button>
                             )}
                         </div>
@@ -115,6 +116,7 @@ export default function DocumentMenu({ documents }) {
                                     document.downloadStatus,
                                 );
                                 const sourceUrl = document.originalUrl || "";
+                                const storageUrl = document.storagePath || "";
 
                                 return (
                                     <li className="document-menu-item" key={document.id}>
@@ -142,11 +144,11 @@ export default function DocumentMenu({ documents }) {
                                         </div>
                                         <div className="document-menu-actions">
                                             <button
-                                                aria-label={`Copy the source link of ${fileName}`}
+                                                aria-label={`Copy the stored file URL of ${fileName}`}
                                                 className="document-menu-action"
-                                                disabled={!sourceUrl}
-                                                onClick={() => copySourceUrl(document)}
-                                                title="Copy the portal source URL"
+                                                disabled={!storageUrl}
+                                                onClick={() => copyStorageUrl(document)}
+                                                title="Copy the stored file URL (AWS)"
                                                 type="button"
                                             >
                                                 <Icon
@@ -157,7 +159,7 @@ export default function DocumentMenu({ documents }) {
                                                 />
                                             </button>
                                             <a
-                                                aria-label={`Open ${fileName}`}
+                                                aria-label={`Open ${fileName} on the source portal`}
                                                 className="document-menu-action"
                                                 href={
                                                     sourceUrl || getDocumentDownloadUrl(document.id)

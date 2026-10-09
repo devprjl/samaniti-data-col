@@ -41,7 +41,7 @@ npm install
 npx playwright install chromium
 ```
 
-> **Note**: `npx playwright install chromium` is required if you plan to run scrapers locally. Some portals (like Harion Municipality) load PDFs dynamically from external CDNs (`lgwebprimarycdn.gov.np`), which the scraper intercepts via headless Chromium. The npm package alone does not download the browser binaries.
+> **Note**: `npx playwright install chromium` is required if you plan to run scrapers locally. Some portals (like Hariwon Municipality) load PDFs dynamically from external CDNs (`lgwebprimarycdn.gov.np`), which the scraper intercepts via headless Chromium. The npm package alone does not download the browser binaries.
 
 Now tell it where your database is, by copying the example file and editing it:
 
@@ -73,9 +73,54 @@ That runs the API and the website together. You can also run just one of them wi
 
 ---
 
+## Containerized setup (Docker)
+
+To run the entire stack (PostgreSQL, Redis, OCR service, and the Web/Scraper app) using Docker:
+
+```bash
+docker compose up -d
+```
+
+- **Website**: http://localhost:5173
+- **API**: http://localhost:5001
+- **OCR Service**: http://localhost:5050
+
+### Working inside the container
+
+You can exec/SSH into the running application container at any time:
+
+```bash
+docker exec -it samaniti-app bash
+# or using compose:
+docker compose exec app bash
+```
+
+Once inside the container:
+
+- **Database sync**:
+    ```bash
+    npm run db:push
+    ```
+- **Playwright & Chromium**: Chromium is installed during image build. If you ever need to re-install or verify it manually:
+    ```bash
+    npx playwright install --with-deps chromium
+    ```
+- **Python dependencies** (for OCR queue scripts or standalone runs inside the container):
+    ```bash
+    cd services/ocr
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    ```
+- **Running a scraper**:
+    ```bash
+    npm run scraper madhesh:hariwon
+    ```
+
+---
+
 ## Deployment
 
-The live site is at **https://samaniti.sauravparajulee.com.np**
+The live site is at **https://lgwebscraper.sauravparajulee.com.np**
 
 It is a single Vercel project that serves both the website and the API from the same
 address, and it only reads the database. Scraping is switched off in production, so
@@ -148,13 +193,13 @@ to the end of the URL.
 
 ## Running a scraper
 
-> **Note**: Scrapers that resolve dynamic assets from government CDNs (such as `madesh:harion`) use Playwright in headless mode. Make sure you ran `npx playwright install chromium` before running them.
+> **Note**: Scrapers that resolve dynamic assets from government CDNs (such as `madhesh:hariwon`) use Playwright in headless mode. Make sure you ran `npx playwright install chromium` before running them.
 
 ```bash
 npm run scraper                    # every municipality in both provinces
 npm run scraper madhesh            # every municipality in one province
 npm run scraper lumbini:banganga   # one municipality
-npm run scraper madesh:harion      # single municipality scraper
+npm run scraper madhesh:hariwon    # single municipality scraper
 ```
 
 How the scraper works, stage by stage, is in the

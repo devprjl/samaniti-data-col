@@ -19,14 +19,16 @@ export const municipalitySelect = {
 /**
  * Document fields for a list row.
  *
- * The stored copy of a file lives on the scraper's own disk and never reaches a
- * deployment, so `storagePath` and `downloadError` are of no use to a reader and
- * are left to the detail endpoint.
+ * `storagePath` is the public URL of the stored copy (CloudFront/S3). The table
+ * exposes it through a copy control, while a separate open control points at the
+ * portal `originalUrl`, so both addresses are needed on every row. `downloadError`
+ * is still only rendered on the detail page and stays there.
  */
 export const documentListSelect = {
     id: true,
     fileName: true,
     originalUrl: true,
+    storagePath: true,
     downloadStatus: true,
 };
 

@@ -11,22 +11,19 @@ import {
     extractTitle,
     extractDocumentLinks,
     extractDate,
-    extractFiscalYear,
 } from "../../../core/utils/index.js";
 import { executeTransform } from "../../../core/constants/transformers.js";
 import { syncDocumentsToStorage } from "../../../core/storage/index.js";
 
-export const MUNICIPALITY_CODE = "KSHIRESHWARANATH";
+export const MUNICIPALITY_CODE = "DURGABHAGWATI";
 
 export const MUNICIPALITY_METADATA: MunicipalityData = {
     code: MUNICIPALITY_CODE,
-    nameNe: "क्षीरेश्वरनाथ नगरपालिका",
-    nameEn: "Kshireshwarnath Municipality",
+    nameNe: "दुर्गा भगवती गाउँपालिका",
+    nameEn: "Durgabhagwati Rural Municipality",
     province: "Madhesh",
-    district: "Dhanusha",
+    district: "Rautahat",
 };
-
-const S3_DESTINATION_FOLDER = "samaniti-poc";
 
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
@@ -72,7 +69,7 @@ async function transformProjectRow(
     }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -130,7 +127,7 @@ async function transformReportRow(
     const dateCreated = dateCreatedRaw || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -176,7 +173,7 @@ async function transformNoticeRow(
     const dateCreated = createdTd.text().trim() || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -197,17 +194,14 @@ async function transformNoticeRow(
 // Detail page transformers
 // ---------------------------------------------------------------------------
 
-export async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
+async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
-
-    const $context = $(".field-items");
+    const $context = $(".content");
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl, $context);
-    const publishedDate = extractDate($);
-    const fiscalYear = extractFiscalYear($);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     console.log(`[Project Detail] "${titleNe}" | docs: ${documents.length} | url: ${page.url}`);
 
@@ -219,13 +213,12 @@ export async function transformProjectDetail(page: ScrapedPage): Promise<Partial
                 titleNe,
                 titleEn: null,
                 budgetAmount: null,
-                fiscalYear: fiscalYear,
+                fiscalYear: parseNepaliFiscalYear(titleNe) || null,
                 status: "",
                 wardNo: null,
                 sourceUrl: decodeURIComponent(page.url),
                 documents,
                 type: page.category,
-                publishedDate,
             },
         ],
     };
@@ -234,14 +227,12 @@ export async function transformProjectDetail(page: ScrapedPage): Promise<Partial
 async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
-
-    const $context = $(".field-items");
-
     const titleNe = extractTitle($);
-    const documents = extractDocumentLinks($, baseUrl, $context);
     const publishedDate = extractDate($);
-    const fiscalYear = extractFiscalYear($);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+
+    const $context = $(".content");
+    const documents = extractDocumentLinks($, baseUrl, $context);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     console.log(
         `[Report Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -255,7 +246,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
                 titleNe,
                 titleEn: null,
                 type: page.category,
-                fiscalYear,
+                fiscalYear: parseNepaliFiscalYear(titleNe) || null,
                 publishedDate,
                 sourceUrl: decodeURIComponent(page.url),
                 documents,
@@ -267,13 +258,12 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayload>> {
     const $ = cheerio.load(page.html);
     const baseUrl = new URL(page.url).origin;
-    const $context = $(".field-items, .field");
-
     const titleNe = extractTitle($);
-    const documents = extractDocumentLinks($, baseUrl, $context);
     const publishedDate = extractDate($);
-    const fiscalYear = extractFiscalYear($);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    const $context = $(".content");
+
+    const documents = extractDocumentLinks($, baseUrl, $context);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
     console.log(
         `[Notice Detail] "${titleNe}" | date: ${publishedDate} | docs: ${documents.length} | url: ${page.url}`,
@@ -287,7 +277,6 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
                 titleNe,
                 titleEn: null,
                 contentNe: null,
-                fiscalYear,
                 type: page.category,
                 publishedDate,
                 sourceUrl: decodeURIComponent(page.url),
@@ -349,7 +338,7 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
 
     // FIXED: Target the views-row directly where each notice resides
     const rows = $(".view-documents .views-row").toArray();
-    console.log(`[Unstructured Notice] \({rows.length} row(s) found on\){page.url}`);
+    console.log(`[Unstructured Notice] \(${rows.length} row(s) found on\)${page.url}`);
 
     const notices = await Promise.all(
         rows.map(async (rowElement) => {
@@ -390,6 +379,7 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
             const docType = docTypeAnchor.text().trim() || page.category || null;
 
             const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
+            await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
             return {
                 municipalityCode: MUNICIPALITY_CODE,
@@ -406,10 +396,6 @@ async function transformUnstructuredNotice(page: ScrapedPage): Promise<Partial<E
             };
         }),
     );
-
-    for (const notice of notices) {
-        await syncDocumentsToStorage(notice.documents ?? [], S3_DESTINATION_FOLDER);
-    }
 
     return { policyEntities: notices };
 }

@@ -25,8 +25,6 @@ export const MUNICIPALITY_METADATA: MunicipalityData = {
     district: "Rupandehi",
 };
 
-const S3_DESTINATION_FOLDER = "samaniti-poc";
-
 // ---------------------------------------------------------------------------
 // Shared transformers for listing rows
 // ---------------------------------------------------------------------------
@@ -68,7 +66,7 @@ async function transformProjectRow(
     }
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -123,7 +121,7 @@ async function transformReportRow(
     const dateCreated = dateCreatedRaw || null;
 
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     return {
         municipalityCode: MUNICIPALITY_CODE,
@@ -165,7 +163,7 @@ async function transformNoticeRow(
     // so reformatting it would insert a second row for a page already collected
     // instead of updating the one that exists.
     const documents: DocumentData[] = extractDocumentLinks($, baseUrl, row);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
     const fiscalYear = fiscalYearEl.text().trim() || null;
 
@@ -192,7 +190,7 @@ async function transformProjectDetail(page: ScrapedPage): Promise<Partial<EtlPay
 
     const titleNe = extractTitle($);
     const documents = extractDocumentLinks($, baseUrl);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "project");
 
     return {
         policyEntities: [
@@ -221,7 +219,7 @@ async function transformReportDetail(page: ScrapedPage): Promise<Partial<EtlPayl
     const titleNe = extractTitle($);
     const publishedDate = extractDate($);
     const documents = extractDocumentLinks($, baseUrl, $context);
-    await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+    await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "report");
 
     return {
         policyEntities: [
@@ -247,7 +245,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
 
     if (page.category === "news_notices") {
         const documents = extractDocumentLinks($, new URL(page.url).origin, $(".field-item"));
-        await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+        await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
         return {
             policyEntities: [
@@ -270,7 +268,7 @@ async function transformNoticeDetail(page: ScrapedPage): Promise<Partial<EtlPayl
             new URL(page.url).origin,
             $(".content .field-item"),
         );
-        await syncDocumentsToStorage(documents, S3_DESTINATION_FOLDER);
+        await syncDocumentsToStorage(documents, MUNICIPALITY_CODE, "notice");
 
         return {
             policyEntities: [

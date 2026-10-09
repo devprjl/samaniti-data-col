@@ -8,6 +8,15 @@ let s3Client: S3Client | null = null;
 export const S3_BUCKET = process.env.AWS_BUCKET_NAME ?? "";
 
 /**
+ * The root folder (S3 key prefix) every uploaded document lives under.
+ * Configured via `S3_FOLDER_ROOT`, defaulting to "lgwebscraper". Read lazily so
+ * it reflects the environment after dotenv has loaded.
+ */
+export function getS3RootFolder(): string {
+    return (process.env.S3_FOLDER_ROOT || "lgwebscraper").replace(/^\/+|\/+$/g, "");
+}
+
+/**
  * Returns a shared S3Client instance, initialised from environment variables.
  *
  * Environment variables (all defined in .env / .env.example):
@@ -62,11 +71,7 @@ export function getS3PublicUrl(s3Key: string): string {
         .map((segment) => encodeURIComponent(segment))
         .join("/");
 
-    // 1. Explicit CDN / public domain prefix if configured
-    const publicPrefix = (process.env.S3_PUBLIC_URL_PREFIX || process.env.AWS_PUBLIC_URL)?.replace(
-        /\/+$/,
-        "",
-    );
+    const publicPrefix = process.env.S3_PUBLIC_URL_PREFIX?.replace(/\/+$/, "");
     if (publicPrefix) {
         return `${publicPrefix}/${encodedKey}`;
     }

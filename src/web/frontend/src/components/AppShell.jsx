@@ -12,8 +12,8 @@ const primaryNavigation = [
     { to: "/", label: "Overview", icon: "overview" },
     { to: "/municipalities", label: "Local governments", icon: "building" },
     { to: "/activity", label: "Collection activity", icon: "activity" },
-    // { to: "/scraper-workspace", label: "Scraper workspace", icon: "terminal" },
-    // { to: "/ocr-workspace", label: "OCR workspace", icon: "book" }, // hidden in prod
+    { to: "/scraper-workspace", label: "Scraper workspace", icon: "terminal" },
+    { to: "/ocr-workspace", label: "OCR workspace", icon: "book" }, // hidden in prod
     { to: "/methodology", label: "Data guide", icon: "book" },
 ];
 

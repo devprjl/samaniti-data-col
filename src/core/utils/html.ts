@@ -149,7 +149,10 @@ export async function extractCdnLinksViaNetwork(
 
     let browser;
     try {
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch({
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(

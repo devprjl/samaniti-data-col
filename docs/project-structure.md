@@ -147,14 +147,14 @@ samaniti-data-col/
 │   │   │   ├── kanchan-mun/
 │   │   │   ├── sainamaina-mun/
 │   │   │   ├── sarawal-mun/
-│   │   │   └── shuddhodhan-mun/
-│   │   └── madesh/                 # 7 municipalities
+│   │   │   └── suddhodhan-mun/
+│   │   └── madhesh/                # 7 municipalities
 │   │       ├── dhankaul-mun/
 │   │       ├── durgabhagwati-mun/
 │   │       ├── ekdara-mun/
-│   │       ├── harion-mun/
+│   │       ├── hariwon-mun/
 │   │       ├── kshireshwarnath-mun/
-│   │       ├── laxminiya-mun/
+│   │       ├── lakshminiya-mun/
 │   │       └── manarashiswa-mun/
 │   └── web/
 │       ├── backend/                # Express API (port 5001, run via tsx)
@@ -432,14 +432,21 @@ unprivileged user with the model caches on a `/models` volume. Its `HEALTHCHECK`
 calls `/health`, which checks Redis and Postgres for real rather than just reporting
 that the process is alive.
 
-**`Dockerfile`** — the scraper and web workspace. Chromium and its shared libraries are
-installed here because `playwright` being present as a dependency does not install a
-browser; without this the crawler fails every request with a missing-library error.
+**`Dockerfile`** — the scraper and web workspace. Includes `procps` (required for crawler
+memory snapshots via `ps`), `python3`, and Chromium dependencies. Chromium is installed
+during image build (`npx playwright install --with-deps chromium`).
 
-`docker-compose.yml` runs Postgres, Redis and the OCR service by default, and keeps the
-scraper behind a `profiles` entry so `docker compose up` gives you the durable stack
-rather than a batch job that has nothing to do until you ask for it.
+`docker-compose.yml` runs Postgres, Redis, the OCR service, and the web/scraper app.
+To enter the container for administrative tasks, manual scraping, or virtual environment setup:
 
-The published host ports are all overridable. The defaults `5432` and `6379` collide
-with any Postgres or Redis already running on the machine, which is why `docker compose
-up` fails outright on a developer laptop that already has both.
+```bash
+docker compose exec app bash
+```
+
+Inside the container:
+
+- Sync schema: `npm run db:push`
+- Reinstall Playwright browser if needed: `npx playwright install --with-deps chromium`
+- Setup Python venv for OCR scripts: `cd services/ocr && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+
+The published host ports are all overridable with fallback defaults.

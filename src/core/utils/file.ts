@@ -1,7 +1,7 @@
 import path from "path";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { MIME_TYPES } from "../constants/file.js";
-import { getS3Client, getS3PublicUrl, S3_BUCKET } from "../storage/config.js";
+import { buildS3Key, getS3Client, getS3PublicUrl, S3_BUCKET } from "../storage/index.js";
 import type { DocumentData } from "../types/domain.js";
 
 // Global in-memory cache shared across all upload calls in the running process
@@ -60,7 +60,8 @@ export interface UploadResult {
  */
 export async function streamUrlToS3(
     fileUrl: string,
-    destinationFolder: string,
+    municipality: string,
+    category: string | null | undefined,
     fileName: string,
     forceOverwrite = false,
 ): Promise<string> {
@@ -73,7 +74,7 @@ export async function streamUrlToS3(
         return globalUploadCache.get(fileUrl)!;
     }
 
-    const s3Key = `${destinationFolder.replace(/\/+$/, "")}/${fileName.replace(/^\/+/, "")}`;
+    const s3Key = buildS3Key(municipality, category, fileName);
     const s3 = getS3Client();
 
     // 2. S3 bucket existence check: avoids re-downloading and re-uploading
@@ -149,13 +150,15 @@ export async function streamUrlToS3(
  * - Non-fatal error handling: a single document failure logs an error and
  *   marks that document as "failed" without halting the pipeline.
  *
- * @param documents         Array of DocumentData to upload. Modified in-place.
- * @param destinationFolder S3 prefix/folder, e.g. "documents/madesh/harion-mun".
+ * @param documents    Array of DocumentData to upload. Modified in-place.
+ * @param municipality Municipality slug used as the second key segment.
+ * @param category     Entity category used as the third key segment.
  * @returns A summary of how many succeeded and failed.
  */
 export async function uploadDocumentsToS3(
     documents: DocumentData[],
-    destinationFolder: string,
+    municipality: string,
+    category: string | null | undefined,
 ): Promise<{ succeeded: number; failed: number; results: UploadResult[] }> {
     let succeeded = 0;
     let failed = 0;
@@ -197,7 +200,12 @@ export async function uploadDocumentsToS3(
         try {
             const fileName =
                 doc.fileName || path.basename(doc.originalUrl.split("?")[0]) || "document.pdf";
-            const storageUrl = await streamUrlToS3(doc.originalUrl, destinationFolder, fileName);
+            const storageUrl = await streamUrlToS3(
+                doc.originalUrl,
+                municipality,
+                category,
+                fileName,
+            );
 
             // Mutate the document in-place so downstream loaders store the URL
             doc.storagePath = storageUrl;
@@ -231,7 +239,8 @@ export async function uploadDocumentsToS3(
     }
 
     console.log(
-        `[storage] Upload batch complete: ${succeeded} succeeded, ${failed} failed (folder: ${destinationFolder})`,
+        `[storage] Upload batch complete: ${succeeded} succeeded, ${failed} failed ` +
+            `(folder: ${buildS3Key(municipality, category, "").replace(/\/+$/, "")})`,
     );
 
     return { succeeded, failed, results };

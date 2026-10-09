@@ -35,9 +35,8 @@ export interface ScraperTarget {
 /**
  * Identity of a scraper as stored in the database.
  *
- * The municipality code cannot be derived from the folder name (e.g. the
- * `shuddhodhan-mun` folder holds the `SUDDHODHAN` code), so it is read from the
- * scraper's own `MUNICIPALITY_CODE` — the value the loader upserts under.
+ * The municipality code is read from the scraper's own `MUNICIPALITY_CODE`
+ * — the value the loader upserts under.
  */
 export interface ScraperTargetIdentity {
     municipalityCode: string | null;
